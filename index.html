@@ -580,6 +580,7 @@ const FIREBASE_CONFIG = {
   appId: "1:143279359308:web:367129ca43ed822b04fbe9"
 };
 
+
 // ============================================================
 // CONSTANTS
 // ============================================================
@@ -2560,7 +2561,7 @@ function renderDonnees() {
 
 async function exportXLSX() {
   if (!window.XLSX) { showToast('Librairie XLSX non chargée', 'error'); return; }
-  showLoader(true);
+  showLoader();
   try {
     const wb = XLSX.utils.book_new();
 
@@ -2608,7 +2609,7 @@ async function exportXLSX() {
   } catch(e) {
     showToast('Erreur export: ' + e.message, 'error');
   }
-  showLoader(false);
+  hideLoader();
 }
 
 function exportJSON() {
@@ -2682,7 +2683,7 @@ async function processImport() {
   const file = document.getElementById('import-file').files[0];
   if (!file) { showToast('Sélectionnez un fichier', 'error'); return; }
 
-  showLoader(true);
+  showLoader();
   try {
     let rows = [];
     if (file.name.endsWith('.csv')) {
@@ -2734,7 +2735,7 @@ async function processImport() {
   } catch(e) {
     showToast('Erreur import: ' + e.message, 'error');
   }
-  showLoader(false);
+  hideLoader();
 }
 
 function openExportMembersModal() {
@@ -2771,7 +2772,7 @@ async function wipeAllData() {
   const ok2 = await confirmDialog('Confirmation finale', 'Tapez OK pour confirmer la suppression complète.');
   if (!ok2) return;
 
-  showLoader(true);
+  showLoader();
   try {
     const ref = dbRef('dojo');
     await ref.child('members').remove();
@@ -2788,7 +2789,7 @@ async function wipeAllData() {
   } catch(e) {
     showToast('Erreur: ' + e.message, 'error');
   }
-  showLoader(false);
+  hideLoader();
 }
 
 /* ── Obligations légales ──────────────────────────────────────── */
@@ -3231,10 +3232,10 @@ async function submitPendingPayment() {
 
 /* ── Init ─────────────────────────────────────────────────────── */
 async function checkFirstRun() {
-  showLoader(true);
+  showLoader();
   try {
     const snap = await dbRef('dojo/config').once('value');
-    showLoader(false);
+    hideLoader();
     if (!snap.exists()) {
       showSetupWizard();
     } else {
@@ -3242,7 +3243,7 @@ async function checkFirstRun() {
       document.getElementById('login-screen').style.display = 'flex';
     }
   } catch(e) {
-    showLoader(false);
+    hideLoader();
     document.getElementById('login-screen').style.display = 'flex';
   }
 }
@@ -3296,17 +3297,17 @@ self.addEventListener('fetch', e => {
     APP.currentUser = session.user;
     APP.encKey = session.key;
     APP.role = session.role;
-    showLoader(true);
+    showLoader();
     try {
       await loadAllData();
-      showLoader(false);
+      hideLoader();
       if (APP.role === 'member') {
         showMemberPortal();
       } else {
         showAdminApp();
       }
     } catch(e) {
-      showLoader(false);
+      hideLoader();
       clearSession();
       checkFirstRun();
     }
