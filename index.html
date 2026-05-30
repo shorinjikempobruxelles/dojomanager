@@ -3375,7 +3375,7 @@ async function submitPendingPayment() {
 async function checkFirstRun() {
   showLoader();
   try {
-    const snap = await dbRef('dojo/config').once('value');
+    const snap = await dbRef('dojo/dojo_meta').once('value');
     hideLoader();
     if (!snap.exists()) {
       showSetupWizard();
