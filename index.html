@@ -580,7 +580,6 @@ const FIREBASE_CONFIG = {
   appId: "1:143279359308:web:367129ca43ed822b04fbe9"
 };
 
-
 // ============================================================
 // CONSTANTS
 // ============================================================
@@ -1407,6 +1406,7 @@ function renderMembers() {
 }
 
 function openMemberForm(memberId) {
+  if (memberId) memberId = Number(memberId);
   const m = memberId ? APP.members.find(x=>x.id===memberId) : null;
   const title = m ? `Modifier — ${m.firstname} ${m.lastname}` : 'Nouveau membre';
   const enrol = m ? (m.enrol||{}) : {};
@@ -2868,6 +2868,65 @@ function renderObligations() {
 }
 
 /* ── Member Detail Modal ──────────────────────────────────────── */
+function detPayTypeChanged() {
+  const type = document.getElementById('det-pay-type').value;
+  const defaults = {adhesion:45,cotisation_mensuelle:40,cotisation_trimestrielle:100,cotisation_sept_mai:270,cotisation_annuelle:300};
+  const amt = document.getElementById('det-pay-amount');
+  if (amt && defaults[type]) amt.value = defaults[type];
+}
+
+async function addAttendanceFromModal(memberId) {
+  const date = document.getElementById('det-att-date').value;
+  const type = document.getElementById('det-att-type').value;
+  if (!date) { showToast('Date requise','error'); return; }
+
+  // Find existing session on that date+type or create one
+  let session = APP.sessions.find(s => s.date===date && s.type===type);
+  if (!session) {
+    session = {id:nextSessionId(), date, type, notes:'', present:[]};
+    APP.sessions.push(session);
+  }
+  if (!session.present) session.present = [];
+  if (!session.present.includes(memberId)) {
+    session.present.push(memberId);
+    await saveSessions();
+    await logAudit('Présence ajoutée', `Membre ${memberId} — ${date}`);
+    showToast('Présence ajoutée','ok');
+    // Refresh the tab
+    const m = APP.members.find(x=>x.id===memberId);
+    if (m) renderMemberDetailContent(m,'presences');
+  } else {
+    showToast('Déjà présent à cette session','warn');
+  }
+}
+
+async function addPaymentFromModal(memberId) {
+  const type   = document.getElementById('det-pay-type').value;
+  const amount = parseFloat(document.getElementById('det-pay-amount').value);
+  const date   = document.getElementById('det-pay-date').value;
+  const method = document.getElementById('det-pay-method').value;
+  const note   = document.getElementById('det-pay-note').value.trim();
+
+  if (!amount || amount<=0) { showToast('Montant invalide','error'); return; }
+  if (!date) { showToast('Date requise','error'); return; }
+
+  const payment = {id:nextPaymentId(), memberId, type, amount, date, method, note, status:'approved'};
+  APP.payments.push(payment);
+  await savePayments();
+  await logAudit('Paiement ajouté', `Membre ${memberId} — ${type} ${amount}€`);
+  showToast('Paiement enregistré','ok');
+  const m = APP.members.find(x=>x.id===memberId);
+  if (m) renderMemberDetailContent(m,'paiements');
+}
+
+async function deletePaymentFromModal(memberId, paymentId) {
+  APP.payments = APP.payments.filter(p => !(p.memberId===memberId && String(p.id)===String(paymentId)));
+  await savePayments();
+  showToast('Paiement supprimé','ok');
+  const m = APP.members.find(x=>x.id===memberId);
+  if (m) renderMemberDetailContent(m,'paiements');
+}
+
 function openMemberDetailModal(memberId) {
   const m = APP.members.find(x => x.id === memberId);
   if (!m) return;
@@ -2884,7 +2943,7 @@ function renderMemberDetailContent(m, tab) {
   document.getElementById('modal-body').innerHTML = `
     <div class="tabs" style="margin-bottom:16px">
       ${tabs.map(t => `
-        <button class="tab-btn${t===tab?' active':''}" onclick="renderMemberDetailContent(APP.members.find(x=>x.id==='${m.id}'),'${t}')">
+        <button class="tab-btn${t===tab?' active':''}" onclick="renderMemberDetailContent(APP.members.find(x=>x.id===${m.id}),'${t}')">
           ${t==='profil'?'Profil':t==='presences'?'Présences':'Paiements'}
         </button>`).join('')}
     </div>
@@ -2921,8 +2980,8 @@ function renderMemberDetailContent(m, tab) {
           : `<span style="color:var(--text2)">${esc(eligible.reason||'Non éligible')}</span>`}
       </div>
       <div style="display:flex;gap:8px;margin-top:16px">
-        <button class="btn btn-primary btn-sm" onclick="closeModal();openMemberForm('${m.id}')">✏️ Modifier</button>
-        <button class="btn btn-secondary btn-sm" onclick="closeModal();deleteMemberConfirm('${m.id}')">🗑️ Supprimer</button>
+        <button class="btn btn-primary btn-sm" onclick="closeModal();openMemberForm(${m.id})">✏️ Modifier</button>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal();deleteMemberConfirm(${m.id})">🗑️ Supprimer</button>
       </div>`;
 
   } else if (tab === 'presences') {
@@ -2949,13 +3008,31 @@ function renderMemberDetailContent(m, tab) {
           <div style="font-size:11px;color:var(--text2)">Taux</div>
         </div>
       </div>
+      <div style="border:1px solid var(--border);border-radius:var(--r);padding:12px;margin-bottom:14px">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px">➕ AJOUTER UNE PRÉSENCE</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <div class="form-group" style="margin:0;flex:1;min-width:130px">
+            <label class="form-label">Date</label>
+            <input type="date" id="det-att-date" class="form-input" value="${todayISO()}">
+          </div>
+          <div class="form-group" style="margin:0;flex:2;min-width:160px">
+            <label class="form-label">Type</label>
+            <select id="det-att-type" class="form-input">
+              ${SESSION_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('')}
+            </select>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="addAttendanceFromModal(${m.id})" style="white-space:nowrap">Ajouter</button>
+        </div>
+      </div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:8px">30 DERNIÈRES SESSIONS PRÉSENT</div>
+      <div id="det-att-list">
       ${memberSessions.length === 0 ? '<p style="color:var(--text2)">Aucune présence enregistrée.</p>' :
         memberSessions.map(s => `
           <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
             <span>${fmtDate(s.date)}</span>
             <span style="color:var(--text2)">${esc(s.type||'Entraînement')}</span>
-          </div>`).join('')}`;
+          </div>`).join('')}
+      </div>`;
 
   } else if (tab === 'paiements') {
     const mPayments = APP.payments
@@ -2968,6 +3045,41 @@ function renderMemberDetailContent(m, tab) {
         <span style="color:var(--text2)">Total payé</span>
         <strong style="color:var(--gold)">${total.toFixed(2)} €</strong>
       </div>
+      <div style="border:1px solid var(--border);border-radius:var(--r);padding:12px;margin-bottom:14px">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px">➕ AJOUTER UN PAIEMENT</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Type</label>
+              <select id="det-pay-type" class="form-input" onchange="detPayTypeChanged()">
+                ${Object.entries(PAYMENT_TYPES).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Montant (€)</label>
+              <input type="number" id="det-pay-amount" class="form-input" min="0" step="0.01" placeholder="0.00">
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Date</label>
+              <input type="date" id="det-pay-date" class="form-input" value="${todayISO()}">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Méthode</label>
+              <select id="det-pay-method" class="form-input">
+                <option>Virement</option><option>Cash</option><option>Bancontact</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Note</label>
+            <input id="det-pay-note" class="form-input" placeholder="Référence…">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="addPaymentFromModal(${m.id})">Enregistrer le paiement</button>
+        </div>
+      </div>
+      <div id="det-pay-list">
       ${mPayments.length === 0 ? '<p style="color:var(--text2)">Aucun paiement enregistré.</p>' :
         mPayments.map(p => `
           <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
@@ -2977,9 +3089,10 @@ function renderMemberDetailContent(m, tab) {
             </div>
             <div style="text-align:right">
               <div style="font-weight:600">${Number(p.amount||0).toFixed(2)} €</div>
-              <span class="badge badge-${p.status==='approved'?'success':p.status==='pending'?'warning':'info'}" style="font-size:10px">${p.status||'—'}</span>
+              <button class="btn btn-sm" style="background:#c0392b22;color:#c0392b;padding:2px 6px;font-size:11px;margin-top:2px" onclick="deletePaymentFromModal(${m.id},'${p.id}')">✕</button>
             </div>
-          </div>`).join('')}`;
+          </div>`).join('')}
+      </div>`;
   }
 }
 
