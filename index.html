@@ -3401,15 +3401,74 @@ function renderPortalTab(tab) {
       <div class="card">
         <div class="card-title">Modifier mon profil</div>
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
-          <div class="form-group">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Prénom</label>
+              <input class="form-input" id="p-firstname" value="${esc(m.firstName||'')}">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Nom</label>
+              <input class="form-input" id="p-lastname" value="${esc(m.lastName||'')}">
+            </div>
+          </div>
+          <div class="form-group" style="margin:0">
             <label class="form-label">Email</label>
-            <input class="form-input" id="p-email" value="${esc(m.email||'')}">
+            <input class="form-input" id="p-email" type="email" value="${esc(m.email||'')}">
           </div>
-          <div class="form-group">
+          <div class="form-group" style="margin:0">
             <label class="form-label">Téléphone</label>
-            <input class="form-input" id="p-phone" value="${esc(m.phone||'')}">
+            <input class="form-input" id="p-phone" type="tel" value="${esc(m.phone||'')}">
           </div>
-          <button class="btn btn-primary" onclick="submitPendingProfile()">Soumettre la modification</button>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Date de naissance</label>
+            <div style="display:flex;gap:8px">
+              <select class="form-input" id="p-dob-day" style="flex:1">
+                <option value="">Jour</option>
+                ${Array.from({length:31},(_,i)=>`<option value="${String(i+1).padStart(2,'0')}" ${(m.dob||'').split('-')[2]===String(i+1).padStart(2,'0')?'selected':''}>${i+1}</option>`).join('')}
+              </select>
+              <select class="form-input" id="p-dob-month" style="flex:1.5">
+                <option value="">Mois</option>
+                ${['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'].map((mn,i)=>`<option value="${String(i+1).padStart(2,'0')}" ${(m.dob||'').split('-')[1]===String(i+1).padStart(2,'0')?'selected':''}>${mn}</option>`).join('')}
+              </select>
+              <select class="form-input" id="p-dob-year" style="flex:1.2">
+                <option value="">Année</option>
+                ${Array.from({length:new Date().getFullYear()-1929},(_,i)=>new Date().getFullYear()-i).map(y=>`<option value="${y}" ${(m.dob||'').split('-')[0]===String(y)?'selected':''}>${y}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Rue</label>
+            <input class="form-input" id="p-street" value="${esc(m.street||'')}">
+          </div>
+          <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Numéro</label>
+              <input class="form-input" id="p-number" value="${esc(m.number||'')}">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Boîte</label>
+              <input class="form-input" id="p-addr2" value="${esc(m.addr2||'')}">
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Code postal</label>
+              <input class="form-input" id="p-zip" value="${esc(m.zip||'')}">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Ville</label>
+              <input class="form-input" id="p-city" value="${esc(m.city||'')}">
+            </div>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Contact d'urgence (nom)</label>
+            <input class="form-input" id="p-emname" value="${esc(m.emergencyName||'')}">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Contact d'urgence (téléphone)</label>
+            <input class="form-input" id="p-emphone" value="${esc(m.emergencyPhone||'')}">
+          </div>
+          <button class="btn btn-primary" onclick="submitPendingProfile()">📨 Soumettre la modification</button>
         </div>
       </div>`;
 
@@ -3514,26 +3573,41 @@ async function submitPendingProfile() {
   const m = APP.portalMember;
   if (!m) return;
 
-  const email = document.getElementById('p-email').value.trim();
-  const phone = document.getElementById('p-phone').value.trim();
+  const firstname = document.getElementById('p-firstname').value.trim();
+  const lastname  = document.getElementById('p-lastname').value.trim();
+  const email     = document.getElementById('p-email').value.trim();
+  const phone     = document.getElementById('p-phone').value.trim();
+  const day       = document.getElementById('p-dob-day').value;
+  const month     = document.getElementById('p-dob-month').value;
+  const year      = document.getElementById('p-dob-year').value;
+  const dob       = (day && month && year) ? `${year}-${month}-${day}` : '';
+  const street    = document.getElementById('p-street').value.trim();
+  const number    = document.getElementById('p-number').value.trim();
+  const addr2     = document.getElementById('p-addr2').value.trim();
+  const zip       = document.getElementById('p-zip').value.trim();
+  const city      = document.getElementById('p-city').value.trim();
+  const emergencyName  = document.getElementById('p-emname').value.trim();
+  const emergencyPhone = document.getElementById('p-emphone').value.trim();
 
+  if (!firstname || !lastname) { showToast('Prénom et nom requis', 'error'); return; }
   if (!email) { showToast('Email requis', 'error'); return; }
 
   const change = {
     id: 'pc-' + Date.now(),
     type: 'profile',
     memberId: m.id,
-    memberName: m.firstName + ' ' + m.lastName,
+    memberName: firstname + ' ' + lastname,
     status: 'pending',
     submittedAt: new Date().toISOString(),
-    data: { email, phone },
+    data: { firstname, lastname, email, phone, dob, street, number, addr2, zip, city, emergencyName, emergencyPhone },
   };
 
   try {
     const ref = dbRef('dojo/pendingChanges/' + change.id);
     await ref.set(change);
+    if (!APP.pendingChanges) APP.pendingChanges = [];
     APP.pendingChanges.push(change);
-    showToast('Modification soumise — en attente de validation', 'success');
+    showToast('Modification soumise — en attente de validation ✅', 'ok');
     renderPortalTab('profil');
   } catch(e) {
     showToast('Erreur: ' + e.message, 'error');
