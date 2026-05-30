@@ -13,11 +13,11 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Noto+Serif+JP:wght@400;700&family=DM+Mono:ital,wght@0,400;0,500&display=swap">
 <style>
 :root {
-  --bg:#0f0f14; --bg2:#16161e; --bg3:#1c1c26; --bg4:#22222f;
-  --border:#2a2a3a; --border2:#333344;
-  --text:#e8e8f0; --text2:#9090a8; --text3:#5a5a72;
-  --red:#e05050; --gold:#d4a820; --gold2:#f0c040;
-  --ok:#3db87a; --warn:#e08030; --info:#4090e0;
+  --bg:#fdf8f2; --bg2:#f5ede0; --bg3:#ede0ce; --bg4:#e4d4be;
+  --border:#d4c4b0; --border2:#c0ad96;
+  --text:#2c1f0e; --text2:#6b5240; --text3:#a08870;
+  --red:#c0392b; --gold:#b8860b; --gold2:#d4a820;
+  --ok:#27ae60; --warn:#d4690a; --info:#2980b9;
   --r:10px; --r2:14px; --r3:20px;
   --sidebar-w:240px; --topbar-h:56px; --bottomnav-h:60px;
 }
@@ -579,6 +579,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "143279359308",
   appId: "1:143279359308:web:367129ca43ed822b04fbe9"
 };
+
 
 // ============================================================
 // CONSTANTS
@@ -2437,7 +2438,7 @@ async function approveProfile(uid) {
         emergencyPhone:profile.emergencyPhone||m.emergencyPhone
       });
       await saveMembers();
-      await dbRef(`dojo/roles/${uid}`).update({memberId:linkId, firstname:m.firstname, lastname:m.lastname, email:m.email});
+      await dbRef(`dojo/roles/${uid}`).update({memberId:linkId, firstname:m.firstname, lastname:m.lastname, email:m.email, approvedAt:Date.now()});
     }
   } else {
     // Create new member
@@ -2450,7 +2451,7 @@ async function approveProfile(uid) {
       belt:null, status:'active', joinDate:todayISO(), enrol:{}};
     APP.members.push(newMember);
     await saveMembers();
-    await dbRef(`dojo/roles/${uid}`).update({memberId:newId, firstname:profile.firstname, lastname:profile.lastname, email:profile.email});
+    await dbRef(`dojo/roles/${uid}`).update({memberId:newId, firstname:profile.firstname, lastname:profile.lastname, email:profile.email, approvedAt:Date.now()});
   }
   await dbRef(`dojo/pending/${uid}/profile`).remove();
   await logAudit('Profil approuvé', `UID ${uid}`);
@@ -2895,7 +2896,7 @@ function renderMemberDetailContent(m, tab) {
     const eligible = checkEligibility(m);
     el.innerHTML = `
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
-        <div style="width:56px;height:56px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#0f0f14">
+        <div style="width:56px;height:56px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#2c1f0e">
           ${(m.firstName||'?')[0]}${(m.lastName||'?')[0]}
         </div>
         <div>
@@ -2984,7 +2985,7 @@ function renderMemberDetailContent(m, tab) {
 
 /* ── Member Portal ────────────────────────────────────────────── */
 function renderMemberPortal() {
-  const roleData = APP.portalMember; // set by showMemberPortal
+  const roleData = APP.portalMember; // set by showMemberPortal — from dojo/roles/{uid} (unencrypted)
   const linked = roleData && roleData.memberId;
 
   if (!linked) {
@@ -2992,10 +2993,20 @@ function renderMemberPortal() {
     return;
   }
 
-  const m = APP.members.find(x => x.id === roleData.memberId)
-    || APP.members.find(x => x.email === (roleData.email || APP.email));
-  if (!m) { renderUnlinkedPortal(roleData); return; }
-
+  // Build display object from roleData (unencrypted) — no vault key needed for members
+  const m = {
+    id:        roleData.memberId,
+    firstName: roleData.firstname || '',
+    lastName:  roleData.lastname  || '',
+    email:     roleData.email     || APP.email || '',
+    belt:      roleData.belt      || null,
+    phone:     roleData.phone     || '',
+    dob:       roleData.dob       || '',
+    fbsk:      roleData.fbsk      || '',
+    status:    roleData.status    || 'active',
+    joinDate:  roleData.joinDate  || '',
+  };
+  APP.portalRoleData = roleData; // keep original for approvedAt check
   APP.portalMember = m;
   renderPortalTab('profil');
 }
@@ -3169,8 +3180,16 @@ function renderPortalTab(tab) {
   if (tab === 'profil') {
     const pending = APP.pendingChanges.filter(p => p.type==='profile' && p.memberId===m.id && p.status==='pending');
     el.innerHTML = `
+      ${APP.portalRoleData && APP.portalRoleData.approvedAt && (Date.now() - APP.portalRoleData.approvedAt < 7*24*3600*1000) ? `
+        <div style="background:linear-gradient(135deg,#2a4a2a,#1e3a1e);border:1px solid #3db87a44;border-radius:var(--r2);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
+          <span style="font-size:24px">🎉</span>
+          <div>
+            <div style="font-weight:600;color:#3db87a">Bienvenue, ${esc((APP.portalRoleData&&APP.portalRoleData.firstname)||'')} !</div>
+            <div style="font-size:13px;color:var(--text2);margin-top:2px">Votre profil a été approuvé par l'administrateur.</div>
+          </div>
+        </div>` : ''}
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px">
-        <div style="width:56px;height:56px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#0f0f14">
+        <div style="width:56px;height:56px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#2c1f0e">
           ${(m.firstName||'?')[0]}${(m.lastName||'?')[0]}
         </div>
         <div>
