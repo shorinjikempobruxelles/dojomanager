@@ -2944,15 +2944,17 @@ async function deletePaymentFromModal(memberId, paymentId) {
 }
 
 async function syncMemberToPortal(memberId) {
+  memberId = Number(memberId);
   const m = APP.members.find(x => x.id === memberId);
-  if (!m) return;
+  if (!m) { showToast('Membre introuvable', 'error'); return; }
 
-  // Find the uid in roles that has this memberId
+  showLoader('Synchronisation…');
   try {
     const snap = await dbRef('dojo/roles').once('value');
     const roles = snap.val() || {};
-    const uid = Object.keys(roles).find(k => roles[k].memberId === memberId);
+    const uid = Object.keys(roles).find(k => Number(roles[k].memberId) === memberId);
     if (!uid) {
+      hideLoader();
       showToast('Aucun compte membre lié à ce profil', 'warn');
       return;
     }
@@ -2976,8 +2978,10 @@ async function syncMemberToPortal(memberId) {
       emergencyPhone: m.emergencyPhone || '',
     });
     await logAudit('Sync portail', `Membre ${memberId} — ${m.firstname} ${m.lastname}`);
+    hideLoader();
     showToast(`Portail de ${m.firstname} synchronisé ✅`, 'ok');
   } catch(e) {
+    hideLoader();
     showToast('Erreur sync: ' + e.message, 'error');
   }
 }
