@@ -2943,6 +2943,45 @@ async function deletePaymentFromModal(memberId, paymentId) {
   if (m) renderMemberDetailContent(m,'paiements');
 }
 
+async function syncMemberToPortal(memberId) {
+  const m = APP.members.find(x => x.id === memberId);
+  if (!m) return;
+
+  // Find the uid in roles that has this memberId
+  try {
+    const snap = await dbRef('dojo/roles').once('value');
+    const roles = snap.val() || {};
+    const uid = Object.keys(roles).find(k => roles[k].memberId === memberId);
+    if (!uid) {
+      showToast('Aucun compte membre lié à ce profil', 'warn');
+      return;
+    }
+    await dbRef(`dojo/roles/${uid}`).update({
+      memberId,
+      firstname:      m.firstname      || '',
+      lastname:       m.lastname       || '',
+      email:          m.email          || '',
+      phone:          m.phone          || '',
+      dob:            m.dob            || '',
+      belt:           m.belt           || '',
+      status:         m.status         || 'active',
+      joinDate:       m.joinDate       || '',
+      fbsk:           m.fbsk           || '',
+      street:         m.street         || '',
+      number:         m.number         || '',
+      addr2:          m.addr2          || '',
+      zip:            m.zip            || '',
+      city:           m.city           || '',
+      emergencyName:  m.emergencyName  || '',
+      emergencyPhone: m.emergencyPhone || '',
+    });
+    await logAudit('Sync portail', `Membre ${memberId} — ${m.firstname} ${m.lastname}`);
+    showToast(`Portail de ${m.firstname} synchronisé ✅`, 'ok');
+  } catch(e) {
+    showToast('Erreur sync: ' + e.message, 'error');
+  }
+}
+
 function openMemberDetailModal(memberId) {
   const m = APP.members.find(x => x.id === memberId);
   if (!m) return;
@@ -2997,6 +3036,7 @@ function renderMemberDetailContent(m, tab) {
       </div>
       <div style="display:flex;gap:8px;margin-top:16px">
         <button class="btn btn-primary btn-sm" onclick="closeModal();openMemberForm(${m.id})">✏️ Modifier</button>
+        <button class="btn btn-secondary btn-sm" onclick="syncMemberToPortal(${m.id})" title="Met à jour les données visibles par le membre dans son portail">🔄 Sync portail</button>
         <button class="btn btn-secondary btn-sm" onclick="closeModal();deleteMemberConfirm(${m.id})">🗑️ Supprimer</button>
       </div>`;
 
