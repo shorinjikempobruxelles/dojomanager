@@ -580,7 +580,6 @@ const FIREBASE_CONFIG = {
   appId: "1:143279359308:web:367129ca43ed822b04fbe9"
 };
 
-
 // ============================================================
 // CONSTANTS
 // ============================================================
@@ -2985,21 +2984,163 @@ function renderMemberDetailContent(m, tab) {
 
 /* ── Member Portal ────────────────────────────────────────────── */
 function renderMemberPortal() {
-  const m = APP.members.find(x => x.id === APP.currentUser.memberId)
-    || APP.members.find(x => x.email === APP.currentUser.email);
+  const roleData = APP.portalMember; // set by showMemberPortal
+  const linked = roleData && roleData.memberId;
 
-  if (!m) {
-    document.getElementById('portal-content').innerHTML = `
-      <div class="page-section">
-        <div class="card">
-          <p style="color:var(--text2)">Votre profil membre n'est pas encore lié à ce compte. Contactez l'administrateur.</p>
-        </div>
-      </div>`;
+  if (!linked) {
+    renderUnlinkedPortal(roleData);
     return;
   }
 
+  const m = APP.members.find(x => x.id === roleData.memberId)
+    || APP.members.find(x => x.email === (roleData.email || APP.email));
+  if (!m) { renderUnlinkedPortal(roleData); return; }
+
   APP.portalMember = m;
   renderPortalTab('profil');
+}
+
+function renderUnlinkedPortal(roleData) {
+  // Check if they already submitted a pending profile
+  const uid = APP.uid;
+  document.getElementById('portal-content').innerHTML = `
+    <div class="page-section">
+      <div class="card" style="margin-bottom:14px">
+        <div style="font-size:22px;margin-bottom:6px">👋 Bienvenue !</div>
+        <p style="color:var(--text2);font-size:14px">
+          Complétez votre profil pour finaliser votre inscription au dojo.
+          Un administrateur le validera prochainement.
+        </p>
+      </div>
+      <div class="card" id="unlinked-form-card">
+        <div class="card-title">Mon profil</div>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:10px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="form-group">
+              <label class="form-label">Prénom *</label>
+              <input class="form-input" id="ul-firstname" placeholder="Jean">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Nom *</label>
+              <input class="form-input" id="ul-lastname" placeholder="Dupont">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Téléphone</label>
+            <input class="form-input" id="ul-phone" type="tel" placeholder="0470 12 34 56">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Date de naissance</label>
+            <div style="display:flex;gap:8px">
+              <select class="form-input" id="ul-dob-day" style="flex:1">
+                <option value="">Jour</option>
+                ${Array.from({length:31},(_,i)=>`<option value="${String(i+1).padStart(2,'0')}">${i+1}</option>`).join('')}
+              </select>
+              <select class="form-input" id="ul-dob-month" style="flex:1.5">
+                <option value="">Mois</option>
+                ${['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'].map((m,i)=>`<option value="${String(i+1).padStart(2,'0')}">${m}</option>`).join('')}
+              </select>
+              <select class="form-input" id="ul-dob-year" style="flex:1.2">
+                <option value="">Année</option>
+                ${Array.from({length:new Date().getFullYear()-1929},(_,i)=>new Date().getFullYear()-i).map(y=>`<option value="${y}">${y}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Rue</label>
+            <input class="form-input" id="ul-street" placeholder="Rue de la Paix">
+          </div>
+          <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+            <div class="form-group">
+              <label class="form-label">Numéro</label>
+              <input class="form-input" id="ul-number" placeholder="12">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Boîte</label>
+              <input class="form-input" id="ul-addr2" placeholder="A2">
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px">
+            <div class="form-group">
+              <label class="form-label">Code postal</label>
+              <input class="form-input" id="ul-zip" placeholder="1000">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Ville</label>
+              <input class="form-input" id="ul-city" placeholder="Bruxelles">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Contact d'urgence (nom)</label>
+            <input class="form-input" id="ul-emname" placeholder="Marie Dupont">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Contact d'urgence (téléphone)</label>
+            <input class="form-input" id="ul-emphone" placeholder="0470 98 76 54">
+          </div>
+          <button class="btn btn-primary" onclick="submitUnlinkedProfile()">
+            ✅ Envoyer mon profil
+          </button>
+        </div>
+      </div>
+    </div>`;
+
+  // Pre-fill from Firebase pending if exists
+  dbRef(`dojo/pending/${uid}/profile`).once('value').then(snap => {
+    const d = snap.val();
+    if (!d) return;
+    if (d.status === 'pending') {
+      document.getElementById('unlinked-form-card').innerHTML = `
+        <div class="card-title">Mon profil</div>
+        <div class="alert alert-warning" style="margin-top:10px">
+          ⏳ Votre profil a été soumis et est en attente de validation par l'administrateur.
+        </div>
+        <div style="font-size:13px;line-height:2;margin-top:12px;color:var(--text2)">
+          <div><b>Prénom :</b> ${esc(d.firstname||'—')}</div>
+          <div><b>Nom :</b> ${esc(d.lastname||'—')}</div>
+          <div><b>Email :</b> ${esc(d.email||'—')}</div>
+          <div><b>Tél :</b> ${esc(d.phone||'—')}</div>
+        </div>`;
+    }
+  }).catch(()=>{});
+}
+
+async function submitUnlinkedProfile() {
+  const uid = APP.uid;
+  const firstname = document.getElementById('ul-firstname').value.trim();
+  const lastname  = document.getElementById('ul-lastname').value.trim();
+  if (!firstname || !lastname) { showToast('Prénom et nom requis', 'error'); return; }
+
+  const day   = document.getElementById('ul-dob-day').value;
+  const month = document.getElementById('ul-dob-month').value;
+  const year  = document.getElementById('ul-dob-year').value;
+  const dob   = (day && month && year) ? `${year}-${month}-${day}` : '';
+
+  const profile = {
+    uid,
+    memberId: null,
+    email: APP.email,
+    firstname, lastname,
+    phone:  document.getElementById('ul-phone').value.trim(),
+    dob,
+    street: document.getElementById('ul-street').value.trim(),
+    number: document.getElementById('ul-number').value.trim(),
+    addr2:  document.getElementById('ul-addr2').value.trim(),
+    zip:    document.getElementById('ul-zip').value.trim(),
+    city:   document.getElementById('ul-city').value.trim(),
+    emergencyName:  document.getElementById('ul-emname').value.trim(),
+    emergencyPhone: document.getElementById('ul-emphone').value.trim(),
+    status: 'pending',
+    submittedAt: new Date().toISOString(),
+  };
+
+  try {
+    await dbRef(`dojo/pending/${uid}/profile`).set(profile);
+    showToast('Profil envoyé — en attente de validation ✅', 'ok');
+    renderUnlinkedPortal(APP.portalMember);
+  } catch(e) {
+    showToast('Erreur : ' + e.message, 'error');
+  }
 }
 
 function renderPortalTab(tab) {
