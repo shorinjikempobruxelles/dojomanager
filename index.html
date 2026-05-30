@@ -3095,7 +3095,7 @@ function renderMemberDetailContent(m, tab) {
       </div>`;
 
   } else if (tab === 'paiements') {
-    const mPayments = APP.payments
+    const mPayments = (APP.payments||[])
       .filter(p => p.memberId === m.id)
       .sort((a,b) => b.date.localeCompare(a.date));
     const total = mPayments.reduce((s,p) => s + Number(p.amount||0), 0);
@@ -3358,7 +3358,7 @@ function renderPortalTab(tab) {
   const el = document.getElementById('portal-tab-body');
 
   if (tab === 'profil') {
-    const pending = APP.pendingChanges.filter(p => p.type==='profile' && p.memberId===m.id && p.status==='pending');
+    const pending = (APP.pendingChanges||[]).filter(p => p.type==='profile' && p.memberId===m.id && p.status==='pending');
     el.innerHTML = `
       ${APP.portalRoleData && APP.portalRoleData.approvedAt && (Date.now() - APP.portalRoleData.approvedAt < 7*24*3600*1000) ? `
         <div style="background:linear-gradient(135deg,#2a4a2a,#1e3a1e);border:1px solid #3db87a44;border-radius:var(--r2);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
@@ -3414,10 +3414,10 @@ function renderPortalTab(tab) {
       </div>`;
 
   } else if (tab === 'paiements') {
-    const mPayments = APP.payments
+    const mPayments = (APP.payments||[])
       .filter(p => p.memberId === m.id)
       .sort((a,b) => b.date.localeCompare(a.date));
-    const pendingPay = APP.pendingChanges.filter(p => p.type==='payment' && p.memberId===m.id && p.status==='pending');
+    const pendingPay = (APP.pendingChanges||[]).filter(p => p.type==='payment' && p.memberId===m.id && p.status==='pending');
     const cotStatus = cotisationStatus(m);
 
     el.innerHTML = `
@@ -3477,11 +3477,11 @@ function renderPortalTab(tab) {
       </div>`;
 
   } else if (tab === 'presences') {
-    const attended = APP.sessions.filter(s => (s.attendees||[]).includes(m.id));
-    const total = APP.sessions.length;
+    const attended = (APP.sessions||[]).filter(s => (s.attendees||[]).includes(m.id));
+    const total = (APP.sessions||[]).length;
     const rate = total ? Math.round(attended.length/total*100) : 0;
 
-    const recent = attended.sort((a,b) => b.date.localeCompare(a.date)).slice(0, 20);
+    const recent = [...attended].sort((a,b) => b.date.localeCompare(a.date)).slice(0, 20);
 
     el.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
