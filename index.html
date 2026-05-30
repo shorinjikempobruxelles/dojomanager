@@ -2438,7 +2438,15 @@ async function approveProfile(uid) {
         emergencyPhone:profile.emergencyPhone||m.emergencyPhone
       });
       await saveMembers();
-      await dbRef(`dojo/roles/${uid}`).update({memberId:linkId, firstname:m.firstname, lastname:m.lastname, email:m.email, approvedAt:Date.now()});
+      await dbRef(`dojo/roles/${uid}`).update({
+        memberId:linkId, firstname:m.firstname, lastname:m.lastname,
+        email:m.email, phone:m.phone||'', dob:m.dob||'',
+        belt:m.belt||'', status:m.status||'active', joinDate:m.joinDate||'',
+        street:m.street||'', number:m.number||'', addr2:m.addr2||'',
+        zip:m.zip||'', city:m.city||'', fbsk:m.fbsk||'',
+        emergencyName:m.emergencyName||'', emergencyPhone:m.emergencyPhone||'',
+        approvedAt:Date.now()
+      });
     }
   } else {
     // Create new member
@@ -2451,7 +2459,15 @@ async function approveProfile(uid) {
       belt:null, status:'active', joinDate:todayISO(), enrol:{}};
     APP.members.push(newMember);
     await saveMembers();
-    await dbRef(`dojo/roles/${uid}`).update({memberId:newId, firstname:profile.firstname, lastname:profile.lastname, email:profile.email, approvedAt:Date.now()});
+    await dbRef(`dojo/roles/${uid}`).update({
+        memberId:newId, firstname:profile.firstname, lastname:profile.lastname,
+        email:profile.email, phone:profile.phone||'', dob:profile.dob||'',
+        belt:null, status:'active', joinDate:todayISO(),
+        street:profile.street||'', number:profile.number||'', addr2:profile.addr2||'',
+        zip:profile.zip||'', city:profile.city||'', fbsk:'',
+        emergencyName:profile.emergencyName||'', emergencyPhone:profile.emergencyPhone||'',
+        approvedAt:Date.now()
+      });
   }
   await dbRef(`dojo/pending/${uid}/profile`).remove();
   await logAudit('Profil approuvé', `UID ${uid}`);
@@ -3108,16 +3124,23 @@ function renderMemberPortal() {
 
   // Build display object from roleData (unencrypted) — no vault key needed for members
   const m = {
-    id:        roleData.memberId,
-    firstName: roleData.firstname || '',
-    lastName:  roleData.lastname  || '',
-    email:     roleData.email     || APP.email || '',
-    belt:      roleData.belt      || null,
-    phone:     roleData.phone     || '',
-    dob:       roleData.dob       || '',
-    fbsk:      roleData.fbsk      || '',
-    status:    roleData.status    || 'active',
-    joinDate:  roleData.joinDate  || '',
+    id:             roleData.memberId,
+    firstName:      roleData.firstname     || '',
+    lastName:       roleData.lastname      || '',
+    email:          roleData.email         || APP.email || '',
+    belt:           roleData.belt          || null,
+    phone:          roleData.phone         || '',
+    dob:            roleData.dob           || '',
+    fbsk:           roleData.fbsk          || '',
+    status:         roleData.status        || 'active',
+    joinDate:       roleData.joinDate      || '',
+    street:         roleData.street        || '',
+    number:         roleData.number        || '',
+    addr2:          roleData.addr2         || '',
+    zip:            roleData.zip           || '',
+    city:           roleData.city          || '',
+    emergencyName:  roleData.emergencyName  || '',
+    emergencyPhone: roleData.emergencyPhone || '',
   };
   APP.portalRoleData = roleData; // keep original for approvedAt check
   APP.portalMember = m;
@@ -3316,9 +3339,12 @@ function renderPortalTab(tab) {
         <div class="card-title">Informations</div>
         <div style="font-size:13px;line-height:2">
           <div><span style="color:var(--text2)">FBSK :</span> <strong>${esc(m.fbsk||'—')}</strong></div>
+          <div><span style="color:var(--text2)">Grade :</span> ${beltBadge(m.belt)}</div>
           <div><span style="color:var(--text2)">Email :</span> ${esc(m.email||'—')}</div>
           <div><span style="color:var(--text2)">Téléphone :</span> ${esc(m.phone||'—')}</div>
           <div><span style="color:var(--text2)">Date de naissance :</span> ${m.dob ? fmtDate(m.dob) : '—'}</div>
+          <div><span style="color:var(--text2)">Adresse :</span> ${[m.street,m.number,m.addr2,m.zip,m.city].filter(Boolean).join(', ')||'—'}</div>
+          <div><span style="color:var(--text2)">Urgence :</span> ${esc(m.emergencyName||'—')} ${m.emergencyPhone?'— '+esc(m.emergencyPhone):''}</div>
           <div><span style="color:var(--text2)">Membre depuis :</span> ${m.joinDate ? fmtDate(m.joinDate) : '—'}</div>
         </div>
       </div>
