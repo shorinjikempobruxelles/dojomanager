@@ -224,12 +224,13 @@ h3{font-size:15px;font-weight:600}
 .attendance-stats-table td{padding:6px 10px;font-size:13px}
 
 /* ── Member portal ────────────────────────────────────── */
-#member-portal{display:none;min-height:100vh;min-height:-webkit-fill-available;overflow-y:auto;background:var(--bg);flex-direction:column;-webkit-overflow-scrolling:touch}
+#member-portal{display:none;min-height:100vh;min-height:-webkit-fill-available;overflow-y:scroll;background:var(--bg);flex-direction:column;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain}
 #member-portal.active{display:flex}
 .portal-header{background:var(--bg2);border-bottom:1px solid var(--border);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .portal-header .logo{font-family:'Noto Serif JP',serif;font-size:24px;color:var(--gold)}
 .portal-content{padding:20px;padding-bottom:calc(100px + var(--safe-bottom));max-width:720px;width:100%;margin:0 auto;box-sizing:border-box}
 .col2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.dob-row{display:grid;grid-template-columns:80px 1fr 90px;gap:8px}
 .col2-31{display:grid;grid-template-columns:2fr 1fr;gap:10px}
 .col2-13{display:grid;grid-template-columns:1fr 2fr;gap:10px}
 .portal-section{margin-bottom:28px}
@@ -337,6 +338,8 @@ h3{font-size:15px;font-weight:600}
   .form-grid.cols3{grid-template-columns:1fr 1fr}
   .modal{max-width:100%;margin:auto 8px;border-radius:var(--r2) var(--r2) 0 0;position:fixed;bottom:0;left:0;right:0;max-height:92vh}
   .col2,.col2-31,.col2-13{grid-template-columns:1fr !important}
+  .dob-row{grid-template-columns:1fr 1fr;gap:6px}
+  .dob-row select:last-child{grid-column:1 / -1}
   [style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr !important}
   [style*="grid-template-columns:2fr 1fr"]{grid-template-columns:1fr !important}
   [style*="grid-template-columns:1fr 2fr"]{grid-template-columns:1fr !important}
@@ -3232,16 +3235,16 @@ function renderUnlinkedPortal(roleData) {
           </div>
           <div class="form-group">
             <label class="form-label">Date de naissance</label>
-            <div style="display:flex;gap:8px">
-              <select class="form-input" id="ul-dob-day" style="flex:1">
+            <div class="dob-row">
+              <select class="form-input" id="ul-dob-day">
                 <option value="">Jour</option>
                 ${Array.from({length:31},(_,i)=>`<option value="${String(i+1).padStart(2,'0')}">${i+1}</option>`).join('')}
               </select>
-              <select class="form-input" id="ul-dob-month" style="flex:1.5">
+              <select class="form-input" id="ul-dob-month">
                 <option value="">Mois</option>
                 ${['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'].map((m,i)=>`<option value="${String(i+1).padStart(2,'0')}">${m}</option>`).join('')}
               </select>
-              <select class="form-input" id="ul-dob-year" style="flex:1.2">
+              <select class="form-input" id="ul-dob-year">
                 <option value="">Année</option>
                 ${Array.from({length:new Date().getFullYear()-1929},(_,i)=>new Date().getFullYear()-i).map(y=>`<option value="${y}">${y}</option>`).join('')}
               </select>
@@ -3431,16 +3434,16 @@ function renderPortalTab(tab) {
           </div>
           <div class="form-group" style="margin:0">
             <label class="form-label">Date de naissance</label>
-            <div style="display:flex;gap:8px">
-              <select class="form-input" id="p-dob-day" style="flex:1">
+            <div class="dob-row">
+              <select class="form-input" id="p-dob-day">
                 <option value="">Jour</option>
                 ${Array.from({length:31},(_,i)=>`<option value="${String(i+1).padStart(2,'0')}" ${(m.dob||'').split('-')[2]===String(i+1).padStart(2,'0')?'selected':''}>${i+1}</option>`).join('')}
               </select>
-              <select class="form-input" id="p-dob-month" style="flex:1.5">
+              <select class="form-input" id="p-dob-month">
                 <option value="">Mois</option>
                 ${['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'].map((mn,i)=>`<option value="${String(i+1).padStart(2,'0')}" ${(m.dob||'').split('-')[1]===String(i+1).padStart(2,'0')?'selected':''}>${mn}</option>`).join('')}
               </select>
-              <select class="form-input" id="p-dob-year" style="flex:1.2">
+              <select class="form-input" id="p-dob-year">
                 <option value="">Année</option>
                 ${Array.from({length:new Date().getFullYear()-1929},(_,i)=>new Date().getFullYear()-i).map(y=>`<option value="${y}" ${(m.dob||'').split('-')[0]===String(y)?'selected':''}>${y}</option>`).join('')}
               </select>
