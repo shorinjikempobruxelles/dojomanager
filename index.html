@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0f0f14">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
@@ -18,10 +18,11 @@
   --text:#2c1f0e; --text2:#6b5240; --text3:#a08870;
   --red:#c0392b; --gold:#b8860b; --gold2:#d4a820;
   --ok:#27ae60; --warn:#d4690a; --info:#2980b9;
-  --r:10px; --r2:14px; --r3:20px;
+  --r:10px; --r2:14px; --r3:20px; --safe-bottom:env(safe-area-inset-bottom,0px);
   --sidebar-w:240px; --topbar-h:56px; --bottomnav-h:60px;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{overflow-x:hidden}body{overflow-x:hidden;max-width:100vw}
 html,body{height:100%;font-family:'Sora',sans-serif;background:var(--bg);color:var(--text);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
 a{color:var(--info);text-decoration:none}
 a:hover{text-decoration:underline}
@@ -223,11 +224,14 @@ h3{font-size:15px;font-weight:600}
 .attendance-stats-table td{padding:6px 10px;font-size:13px}
 
 /* ── Member portal ────────────────────────────────────── */
-#member-portal{display:none;height:100vh;overflow-y:auto;background:var(--bg);flex-direction:column}
+#member-portal{display:none;min-height:100vh;min-height:-webkit-fill-available;overflow-y:auto;background:var(--bg);flex-direction:column;-webkit-overflow-scrolling:touch}
 #member-portal.active{display:flex}
 .portal-header{background:var(--bg2);border-bottom:1px solid var(--border);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .portal-header .logo{font-family:'Noto Serif JP',serif;font-size:24px;color:var(--gold)}
-.portal-content{padding:20px;max-width:720px;width:100%;margin:0 auto}
+.portal-content{padding:20px;padding-bottom:calc(100px + var(--safe-bottom));max-width:720px;width:100%;margin:0 auto;box-sizing:border-box}
+.col2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.col2-31{display:grid;grid-template-columns:2fr 1fr;gap:10px}
+.col2-13{display:grid;grid-template-columns:1fr 2fr;gap:10px}
 .portal-section{margin-bottom:28px}
 .portal-section h3{font-size:15px;font-weight:600;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
 
@@ -329,8 +333,14 @@ h3{font-size:15px;font-weight:600}
   .presence-layout{grid-template-columns:1fr;height:auto;overflow:visible}
   .accounting-layout{grid-template-columns:1fr}
   .form-grid{grid-template-columns:1fr}
+  .form-grid{grid-template-columns:1fr}
   .form-grid.cols3{grid-template-columns:1fr 1fr}
   .modal{max-width:100%;margin:auto 8px;border-radius:var(--r2) var(--r2) 0 0;position:fixed;bottom:0;left:0;right:0;max-height:92vh}
+  .col2,.col2-31,.col2-13{grid-template-columns:1fr !important}
+  [style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr !important}
+  [style*="grid-template-columns:2fr 1fr"]{grid-template-columns:1fr !important}
+  [style*="grid-template-columns:1fr 2fr"]{grid-template-columns:1fr !important}
+  [style*="grid-template-columns:repeat(3"]{grid-template-columns:1fr 1fr !important}
   #modal-overlay.open{align-items:flex-end}
   .login-card{margin:16px;padding:28px 24px}
   .stats-grid{grid-template-columns:repeat(2,1fr)}
