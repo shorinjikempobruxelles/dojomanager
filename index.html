@@ -228,7 +228,7 @@ h3{font-size:15px;font-weight:600}
 /* ── Member portal ────────────────────────────────────── */
 #member-portal{display:none;background:var(--bg);min-height:100vh;width:100vw;max-width:100%;overflow-x:clip}
 #member-portal.active{display:block}
-.portal-header{background:var(--bg2);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;width:100%;box-sizing:border-box}
+.portal-header{background:var(--bg2);border-bottom:1px solid var(--border);padding:8px 12px;display:flex;align-items:center;justify-content:space-between;width:100%;box-sizing:border-box}
 .portal-header .logo{font-family:'Noto Serif JP',serif;font-size:24px;color:var(--gold)}
 .portal-content{padding:12px;padding-bottom:120px;box-sizing:border-box;width:100%;max-width:100%}
 .col2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -558,8 +558,7 @@ h3{font-size:15px;font-weight:600}
 <!-- ── Member Portal ───────────────────────────────────── -->
 <div id="member-portal">
   <div class="portal-header">
-    <div class="logo">少林寺</div>
-    <div style="font-size:13px;color:var(--text2)" id="portal-user-name"></div>
+    <span id="portal-user-name" style="font-size:13px;color:var(--text2)"></span>
     <button class="btn btn-secondary btn-sm" onclick="doLogout()">Déconnexion</button>
   </div>
   <div class="portal-content" id="portal-content"></div>
