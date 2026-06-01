@@ -231,6 +231,10 @@ h3{font-size:15px;font-weight:600}
 .portal-header .logo{font-family:'Noto Serif JP',serif;font-size:24px;color:var(--gold)}
 .portal-content{padding:16px;padding-bottom:120px;max-width:720px;width:100%;margin:0 auto;box-sizing:border-box;overflow-x:hidden}
 .col2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mob-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mob-grid-21{display:grid;grid-template-columns:2fr 1fr;gap:10px}
+.mob-grid-12{display:grid;grid-template-columns:1fr 2fr;gap:10px}
+.mob-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .dob-row{display:grid;grid-template-columns:80px 1fr 90px;gap:8px}
 .col2-31{display:grid;grid-template-columns:2fr 1fr;gap:10px}
 .col2-13{display:grid;grid-template-columns:1fr 2fr;gap:10px}
@@ -338,7 +342,8 @@ h3{font-size:15px;font-weight:600}
   .form-grid{grid-template-columns:1fr}
   .form-grid.cols3{grid-template-columns:1fr 1fr}
   .modal{max-width:100%;margin:auto 8px;border-radius:var(--r2) var(--r2) 0 0;position:fixed;bottom:0;left:0;right:0;max-height:92vh}
-  .col2,.col2-31,.col2-13{grid-template-columns:1fr !important}
+  .col2,.col2-31,.col2-13,.mob-grid-2,.mob-grid-21,.mob-grid-12{grid-template-columns:1fr !important}
+  .mob-grid-3{grid-template-columns:1fr 1fr !important}
   .dob-row{grid-template-columns:1fr 1fr;gap:6px}
   .dob-row select:last-child{grid-column:1 / -1}
   [style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr !important}
@@ -3069,7 +3074,7 @@ function renderMemberDetailContent(m, tab) {
     const rate = total ? Math.round(attended/total*100) : 0;
 
     el.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
+      <div class="mob-grid-3" style="margin-bottom:16px">
         <div style="text-align:center;padding:12px;background:var(--surface2);border-radius:8px">
           <div style="font-size:24px;font-weight:700;color:var(--gold)">${attended}</div>
           <div style="font-size:11px;color:var(--text2)">Présences</div>
@@ -3123,7 +3128,7 @@ function renderMemberDetailContent(m, tab) {
       <div style="border:1px solid var(--border);border-radius:var(--r);padding:12px;margin-bottom:14px">
         <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px">➕ AJOUTER UN PAIEMENT</div>
         <div style="display:flex;flex-direction:column;gap:8px">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="mob-grid-2">
             <div class="form-group" style="margin:0">
               <label class="form-label">Type</label>
               <select id="det-pay-type" class="form-input" onchange="detPayTypeChanged()">
@@ -3135,7 +3140,7 @@ function renderMemberDetailContent(m, tab) {
               <input type="number" id="det-pay-amount" class="form-input" min="0" step="0.01" placeholder="0.00">
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="mob-grid-2">
             <div class="form-group" style="margin:0">
               <label class="form-label">Date</label>
               <input type="date" id="det-pay-date" class="form-input" value="${todayISO()}">
@@ -3221,7 +3226,7 @@ function renderUnlinkedPortal(roleData) {
       <div class="card" id="unlinked-form-card">
         <div class="card-title">Mon profil</div>
         <div style="display:flex;flex-direction:column;gap:12px;margin-top:10px">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="mob-grid-2">
             <div class="form-group">
               <label class="form-label">Prénom *</label>
               <input class="form-input" id="ul-firstname" placeholder="Jean">
@@ -3256,7 +3261,7 @@ function renderUnlinkedPortal(roleData) {
             <label class="form-label">Rue</label>
             <input class="form-input" id="ul-street" placeholder="Rue de la Paix">
           </div>
-          <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+          <div class="mob-grid-21">
             <div class="form-group">
               <label class="form-label">Numéro</label>
               <input class="form-input" id="ul-number" placeholder="12">
@@ -3266,7 +3271,7 @@ function renderUnlinkedPortal(roleData) {
               <input class="form-input" id="ul-addr2" placeholder="A2">
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px">
+          <div class="mob-grid-12">
             <div class="form-group">
               <label class="form-label">Code postal</label>
               <input class="form-input" id="ul-zip" placeholder="1000">
@@ -3416,7 +3421,7 @@ function renderPortalTab(tab) {
       <div class="card">
         <div class="card-title">Modifier mon profil</div>
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="mob-grid-2">
             <div class="form-group" style="margin:0">
               <label class="form-label">Prénom</label>
               <input class="form-input" id="p-firstname" value="${esc(m.firstName||'')}">
@@ -3455,7 +3460,7 @@ function renderPortalTab(tab) {
             <label class="form-label">Rue</label>
             <input class="form-input" id="p-street" value="${esc(m.street||'')}">
           </div>
-          <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+          <div class="mob-grid-21">
             <div class="form-group" style="margin:0">
               <label class="form-label">Numéro</label>
               <input class="form-input" id="p-number" value="${esc(m.number||'')}">
@@ -3465,7 +3470,7 @@ function renderPortalTab(tab) {
               <input class="form-input" id="p-addr2" value="${esc(m.addr2||'')}">
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px">
+          <div class="mob-grid-12">
             <div class="form-group" style="margin:0">
               <label class="form-label">Code postal</label>
               <input class="form-input" id="p-zip" value="${esc(m.zip||'')}">
@@ -3558,7 +3563,7 @@ function renderPortalTab(tab) {
     const recent = [...attended].sort((a,b) => b.date.localeCompare(a.date)).slice(0, 20);
 
     el.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
+      <div class="mob-grid-3" style="margin-bottom:16px">
         <div style="text-align:center;padding:14px;background:var(--surface2);border-radius:8px">
           <div style="font-size:26px;font-weight:700;color:var(--gold)">${attended.length}</div>
           <div style="font-size:11px;color:var(--text2)">Présences</div>
