@@ -22,7 +22,8 @@
   --sidebar-w:240px; --topbar-h:56px; --bottomnav-h:60px;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html,body{width:100%;max-width:100%}
+img,table,video{max-width:100%}
+html{overflow-x:clip}body{width:100%;max-width:100vw;overflow-x:hidden}
 html,body{height:100%;font-family:'Sora',sans-serif;background:var(--bg);color:var(--text);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
 a{color:var(--info);text-decoration:none}
 a:hover{text-decoration:underline}
@@ -592,6 +593,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "143279359308",
   appId: "1:143279359308:web:367129ca43ed822b04fbe9"
 };
+
 
 // ============================================================
 // CONSTANTS
