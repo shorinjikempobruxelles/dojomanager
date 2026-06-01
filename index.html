@@ -21,9 +21,8 @@
   --r:10px; --r2:14px; --r3:20px; --safe-bottom:env(safe-area-inset-bottom,0px);
   --sidebar-w:240px; --topbar-h:56px; --bottomnav-h:60px;
 }
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;min-width:0}
 img,video{max-width:100%;height:auto}
-input,select,textarea,button{max-width:100%}
 
 html,body{height:100%;font-family:'Sora',sans-serif;background:var(--bg);color:var(--text);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
 a{color:var(--info);text-decoration:none}
@@ -226,11 +225,11 @@ h3{font-size:15px;font-weight:600}
 .attendance-stats-table td{padding:6px 10px;font-size:13px}
 
 /* ── Member portal ────────────────────────────────────── */
-#member-portal{display:none;background:var(--bg);min-height:100vh;width:100vw;max-width:100%;overflow-x:clip}
+#member-portal{display:none;background:var(--bg)}
 #member-portal.active{display:block}
-.portal-header{background:var(--bg2);border-bottom:1px solid var(--border);padding:8px 12px;display:flex;align-items:center;justify-content:space-between;width:100%;box-sizing:border-box}
+.portal-header{background:var(--bg2);border-bottom:1px solid var(--border);padding:8px 12px;display:flex;flex-direction:column;align-items:flex-start}
 .portal-header .logo{font-family:'Noto Serif JP',serif;font-size:24px;color:var(--gold)}
-.portal-content{padding:12px;padding-bottom:120px;box-sizing:border-box;width:100%;max-width:100%}
+.portal-content{padding:12px;padding-bottom:120px}
 .col2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .mob-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .mob-grid-21{display:grid;grid-template-columns:2fr 1fr;gap:10px}
@@ -559,7 +558,7 @@ h3{font-size:15px;font-weight:600}
 <div id="member-portal">
   <div class="portal-header">
     <span id="portal-user-name" style="font-size:13px;color:var(--text2)"></span>
-    <button class="btn btn-secondary btn-sm" onclick="doLogout()">Déconnexion</button>
+    <button class="btn btn-secondary btn-sm" onclick="doLogout()" style="margin-top:6px;align-self:flex-start">Déconnexion</button>
   </div>
   <div class="portal-content" id="portal-content"></div>
 </div>
