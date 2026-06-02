@@ -227,7 +227,7 @@ h3{font-size:15px;font-weight:600}
 /* ── Member portal ────────────────────────────────────── */
 #member-portal{display:none;background:var(--bg)}
 #member-portal.active{display:block}
-.portal-header{background:var(--bg2);border-bottom:1px solid var(--border);padding:8px 12px;display:flex;flex-direction:column;align-items:flex-start}
+.portal-header{background:var(--bg2);border-bottom:1px solid var(--border);padding:8px 12px;display:flex;flex-direction:row;align-items:center;justify-content:space-between;width:100%}
 .portal-header .logo{font-family:'Noto Serif JP',serif;font-size:24px;color:var(--gold)}
 .portal-content{padding:12px;padding-bottom:120px}
 .col2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -557,8 +557,8 @@ h3{font-size:15px;font-weight:600}
 <!-- ── Member Portal ───────────────────────────────────── -->
 <div id="member-portal">
   <div class="portal-header">
-    <span id="portal-user-name" style="font-size:13px;color:var(--text2)"></span>
-    <button class="btn btn-secondary btn-sm" onclick="doLogout()" style="margin-top:6px;align-self:flex-start">Déconnexion</button>
+    <span id="portal-user-name" style="font-size:13px;color:var(--text2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    <button class="btn btn-secondary btn-sm" onclick="doLogout()" style="flex-shrink:0;margin-left:8px">Déconnexion</button>
   </div>
   <div class="portal-content" id="portal-content"></div>
 </div>
@@ -870,7 +870,10 @@ function openMoreMenu() {
       `<button class="btn btn-secondary" onclick="closeModal();showPage('validations')">🔔 Validations ${APP.pendingCount>0?`<span style="background:var(--red);color:#fff;border-radius:9px;padding:1px 6px;font-size:11px;margin-left:6px">${APP.pendingCount}</span>`:''}  </button>`+
       `<button class="btn btn-secondary" onclick="closeModal();showPage('journal')">📜 Journal d\'audit</button>`+
       `<button class="btn btn-secondary" onclick="closeModal();showPage('donnees')">💾 Données</button>`
-    :'')+'</div>');
+    :'')+
+    `<hr style="border:none;border-top:1px solid var(--border);margin:4px 0">`+
+    `<button class="btn" style="background:var(--red);color:#fff" onclick="closeModal();doLogout()">⏻ Déconnexion</button>`+
+    '</div>');
 }
 
 // ============================================================
@@ -3045,15 +3048,30 @@ function renderMemberDetailContent(m, tab) {
           <div style="margin-top:4px">${beltBadge(m.belt)}</div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
-        <div><span style="color:var(--text2)">FBSK :</span> <strong>${esc(m.fbsk||'—')}</strong></div>
-        <div><span style="color:var(--text2)">Statut :</span> <span class="badge badge-${m.status==='active'?'success':'warning'}">${m.status==='active'?'Actif':'Inactif'}</span></div>
-        <div><span style="color:var(--text2)">Email :</span> ${esc(m.email||'—')}</div>
-        <div><span style="color:var(--text2)">Tél :</span> ${esc(m.phone||'—')}</div>
-        <div><span style="color:var(--text2)">Naissance :</span> ${m.dob ? fmtDate(m.dob) : '—'}</div>
-        <div><span style="color:var(--text2)">Membre depuis :</span> ${m.joinDate ? fmtDate(m.joinDate) : '—'}</div>
-        <div><span style="color:var(--text2)">Grade :</span> ${esc(m.grade||'—')}</div>
-        <div><span style="color:var(--text2)">Date grade :</span> ${m.gradeDate ? fmtDate(m.gradeDate) : '—'}</div>
+      <div style="font-size:13px;line-height:1.9">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;margin-bottom:10px">
+          <div><span style="color:var(--text2)">Statut :</span> <span class="badge badge-${m.status==='active'?'success':'warning'}">${m.status==='active'?'Actif':'Inactif'}</span></div>
+          <div><span style="color:var(--text2)">FBSK :</span> <strong>${esc(m.fbsk||'—')}</strong></div>
+          <div><span style="color:var(--text2)">FSK :</span> ${esc(m.fsk||'—')}</div>
+          <div><span style="color:var(--text2)">WSKO :</span> ${esc(m.wsko||'—')}</div>
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-bottom:10px">
+          <div><span style="color:var(--text2)">Email :</span> ${esc(m.email||'—')}</div>
+          <div><span style="color:var(--text2)">Téléphone :</span> ${esc(m.phone||'—')}</div>
+          <div><span style="color:var(--text2)">Naissance :</span> ${m.dob ? fmtDate(m.dob) : '—'}</div>
+          <div><span style="color:var(--text2)">Membre depuis :</span> ${m.joinDate ? fmtDate(m.joinDate) : '—'}</div>
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-bottom:10px">
+          <div><span style="color:var(--text2)">Adresse :</span> ${[m.street, m.number, m.addr2].filter(Boolean).join(' ') || '—'}</div>
+          <div><span style="color:var(--text2)">Ville :</span> ${[m.zip, m.city].filter(Boolean).join(' ') || '—'}</div>
+          <div><span style="color:var(--text2)">Contact urgence :</span> ${esc(m.emergencyName||'—')}</div>
+          <div><span style="color:var(--text2)">Tél urgence :</span> ${esc(m.emergencyPhone||'—')}</div>
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:10px">
+          <div><span style="color:var(--text2)">Ceinture :</span> ${beltBadge(m.belt)}</div>
+          <div><span style="color:var(--text2)">Date grade :</span> ${m.gradeDate ? fmtDate(m.gradeDate) : '—'}</div>
+          <div><span style="color:var(--text2)">Cotisation :</span> ${m.fee ? m.fee + ' €' : '—'}</div>
+        </div>
       </div>
       <div style="margin-top:16px;padding:12px;background:var(--surface2);border-radius:8px">
         <div style="font-size:12px;color:var(--text2);margin-bottom:6px">ÉLIGIBILITÉ EXAMEN</div>
