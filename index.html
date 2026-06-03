@@ -1222,7 +1222,7 @@ function showMemberPortal(roleData) {
   document.querySelectorAll('.screen').forEach(s=>{ s.classList.remove('active'); s.style.display='none'; });
   document.getElementById('app').style.display='none';
   const mp = document.getElementById('member-portal');
-  mp.style.display='flex';
+  mp.style.display='block';
   mp.classList.add('active');
   APP.portalMember = roleData;
   const name = roleData.firstname ? `${roleData.firstname} ${roleData.lastname}` : roleData.email;
