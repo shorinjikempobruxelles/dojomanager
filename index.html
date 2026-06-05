@@ -486,6 +486,9 @@ h3{font-size:15px;font-weight:600}
         <div class="nav-item" onclick="showPage('comptabilite')" id="nav-comptabilite">
           <span class="icon">💶</span>Comptabilité
         </div>
+        <div class="nav-item" onclick="showPage('evenements')" id="nav-evenements">
+          <span>🗓</span><span>Événements</span>
+        </div>
         <div class="nav-item" onclick="showPage('obligations')" id="nav-obligations">
           <span class="icon">⚖️</span>Obligations légales
         </div>
@@ -603,7 +606,6 @@ const FIREBASE_CONFIG = {
   appId: "1:143279359308:web:367129ca43ed822b04fbe9"
 };
 
-
 // ============================================================
 // CONSTANTS
 // ============================================================
@@ -636,7 +638,7 @@ const SESSION_TYPES = ['Cours régulier','Cours enfants','Cours ados','Stage','K
 const MONTHS_FR = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 const MONTHS_SHORT = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
 const PAGE_TITLES = {
-  dashboard:'Tableau de bord', membres:'Membres', inscriptions:'Inscriptions',
+  dashboard:'Tableau de bord', membres:'Membres', inscriptions:'Inscriptions', evenements:'Événements',
   presences:'Présences', examens:'Examens', comptabilite:'Comptabilité',
   obligations:'Obligations légales', utilisateurs:'Utilisateurs',
   validations:'Validations', journal:'Journal d\'audit', donnees:'Données'
@@ -648,7 +650,7 @@ const PAGE_TITLES = {
 const APP = {
   db:null, auth:null, user:null, uid:null,
   role:null, key:null, salt:null, email:'',
-  members:[], sessions:[], payments:[], auditLog:[], users:[],
+  members:[], sessions:[], payments:[], auditLog:[], users:[], events:[],
   pendingProfiles:{}, pendingPayments:{}, pendingCount:0,
   currentPage:'dashboard', sessionExpiry:null,
   memberSearch:'', memberFilterBelt:'', memberFilterStatus:'',
@@ -848,7 +850,7 @@ function showPage(page) {
   const renders = {
     dashboard:renderDashboard, membres:renderMembers, inscriptions:renderInscriptions,
     presences:renderPresences, examens:renderExamens, comptabilite:renderComptabilite,
-    obligations:renderObligations, utilisateurs:renderUtilisateurs,
+    evenements:renderEvenements, obligations:renderObligations, utilisateurs:renderUtilisateurs,
     validations:renderValidations, journal:renderJournal, donnees:renderDonnees
   };
   if (renders[page]) renders[page]();
@@ -863,6 +865,7 @@ function closeSidebar() {
 }
 function openMoreMenu() {
   openModal('Navigation','<div style="display:flex;flex-direction:column;gap:8px">'+
+    `<button class="btn btn-secondary" onclick="closeModal();showPage('evenements')">🗓 Événements</button>`+
     `<button class="btn btn-secondary" onclick="closeModal();showPage('inscriptions')">📋 Inscriptions</button>`+
     `<button class="btn btn-secondary" onclick="closeModal();showPage('examens')">🏅 Examens</button>`+
     `<button class="btn btn-secondary" onclick="closeModal();showPage('obligations')">⚖️ Obligations légales</button>`+
@@ -890,6 +893,7 @@ async function loadAllData() {
     APP.sessions  = (raw.dojo_sessions ? decryptData(raw.dojo_sessions, APP.key) : null) || [];
     APP.payments  = (raw.dojo_payments ? decryptData(raw.dojo_payments, APP.key) : null) || [];
     APP.auditLog  = (raw.dojo_audit    ? decryptData(raw.dojo_audit, APP.key)    : null) || [];
+    APP.events    = (raw.dojo_events   ? decryptData(raw.dojo_events, APP.key)    : null) || [];
     APP.users     = (raw.dojo_users    ? decryptData(raw.dojo_users, APP.key)    : null) || [];
 
     // Live pending count listener
@@ -934,6 +938,8 @@ async function saveSessions() { await dbRef('dojo/dojo_sessions').set(encryptDat
 async function savePayments() { await dbRef('dojo/dojo_payments').set(encryptData(APP.payments,APP.key)); }
 async function saveUsers()    { await dbRef('dojo/dojo_users').set(encryptData(APP.users,APP.key)); }
 async function saveAudit()    { await dbRef('dojo/dojo_audit').set(encryptData(APP.auditLog,APP.key)); }
+async function saveEvents()    { await dbRef('dojo/dojo_events').set(encryptData(APP.events,APP.key)); }
+function nextEventId() { return APP.events.length>0 ? Math.max(...APP.events.map(e=>e.id||0))+1 : 1; }
 
 function nextMemberId() { return APP.members.length>0 ? Math.max(...APP.members.map(m=>m.id||0))+1 : 1; }
 function nextSessionId() { return APP.sessions.length>0 ? Math.max(...APP.sessions.map(s=>s.id||0))+1 : 1; }
@@ -2836,6 +2842,430 @@ async function wipeAllData() {
 }
 
 /* ── Obligations légales ──────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   ÉVÉNEMENTS
+   ═══════════════════════════════════════════════════════════════ */
+const EVENT_TYPES   = ['Stage','Compétition','AG','Démonstration','Sortie','Autre'];
+const EVENT_STATUSES = ['Planifié','Confirmé','Terminé','Annulé'];
+const DEFAULT_CHECKLIST = [
+  'Réserver la salle / le lieu',
+  'Confirmer les participants',
+  'Envoyer les convocations',
+  'Collecter les paiements',
+  'Préparer le matériel',
+  'Déclarer à la fédération',
+  'Assurance / autorisation parentale',
+];
+
+function renderEvenements() {
+  const filterStatus = APP.evFilterStatus || '';
+  const filterType   = APP.evFilterType   || '';
+  const now = todayISO();
+
+  let evs = [...APP.events].sort((a,b) => (a.dateStart||'').localeCompare(b.dateStart||''));
+  if (filterStatus) evs = evs.filter(e => e.status === filterStatus);
+  if (filterType)   evs = evs.filter(e => e.type === filterType);
+
+  const canEdit = ['admin','gestionnaire'].includes(APP.role);
+
+  document.getElementById('content').innerHTML = `
+  <div class="page-section">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+      <h2 style="font-size:20px">🗓 Événements</h2>
+      ${canEdit ? `<button class="btn btn-primary" onclick="openEventForm(null)">+ Événement</button>` : ''}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      <select class="form-input" style="width:auto" onchange="APP.evFilterStatus=this.value;renderEvenements()">
+        <option value="">Tous les statuts</option>
+        ${EVENT_STATUSES.map(s=>`<option value="${s}" ${filterStatus===s?'selected':''}>${s}</option>`).join('')}
+      </select>
+      <select class="form-input" style="width:auto" onchange="APP.evFilterType=this.value;renderEvenements()">
+        <option value="">Tous les types</option>
+        ${EVENT_TYPES.map(t=>`<option value="${t}" ${filterType===t?'selected':''}>${t}</option>`).join('')}
+      </select>
+    </div>
+    ${evs.length === 0 ? `<div class="card"><p style="color:var(--text2);text-align:center;padding:20px">Aucun événement${filterStatus||filterType?' pour ces filtres':''}.</p></div>` :
+      evs.map(ev => {
+        const past = ev.dateStart < now;
+        const statusColor = {Planifié:'var(--info)',Confirmé:'var(--ok)',Terminé:'var(--text3)',Annulé:'var(--red)'}[ev.status]||'var(--text2)';
+        const checked = (ev.checklist||[]).filter(c=>c.checked).length;
+        const total   = (ev.checklist||[]).length;
+        const regs    = (ev.registrations||[]).length;
+        return `
+        <div class="card" style="margin-bottom:10px;opacity:${ev.status==='Annulé'?'0.6':'1'}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:15px;margin-bottom:4px">${esc(ev.title)}</div>
+              <div style="font-size:12px;color:var(--text2);display:flex;flex-wrap:wrap;gap:8px">
+                <span>📅 ${fmtDate(ev.dateStart)}${ev.dateEnd&&ev.dateEnd!==ev.dateStart?' → '+fmtDate(ev.dateEnd):''}</span>
+                ${ev.location?`<span>📍 ${esc(ev.location)}</span>`:''}
+                <span style="color:${statusColor};font-weight:600">${ev.status}</span>
+                <span style="background:var(--bg3);padding:1px 6px;border-radius:4px">${ev.type}</span>
+              </div>
+              ${ev.description?`<div style="font-size:12px;color:var(--text2);margin-top:6px">${esc(ev.description)}</div>`:''}
+              <div style="display:flex;gap:12px;margin-top:8px;font-size:12px;color:var(--text2)">
+                ${total>0?`<span>✅ ${checked}/${total} tâches</span>`:''}
+                <span>👥 ${regs} inscrit${regs!==1?'s':''}</span>
+                ${ev.budget&&(ev.budget.expected||ev.budget.actual)?`<span>💶 ${ev.budget.actual||0}€ / ${ev.budget.expected||0}€</span>`:''}
+              </div>
+            </div>
+            ${canEdit?`
+            <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+              <button class="btn btn-sm btn-primary" onclick="openEventDetail(${ev.id})">Détails</button>
+              <button class="btn btn-sm btn-secondary" onclick="openEventForm(${ev.id})">✏️</button>
+              <button class="btn btn-sm" style="background:#c0392b22;color:var(--red)" onclick="deleteEventConfirm(${ev.id})">🗑️</button>
+            </div>`:`<button class="btn btn-sm btn-secondary" onclick="openEventDetail(${ev.id})">Voir</button>`}
+          </div>
+        </div>`;
+      }).join('')}
+  </div>`;
+}
+
+function openEventForm(eventId) {
+  const ev = eventId ? APP.events.find(e=>e.id===eventId) : null;
+  const title = ev ? `Modifier — ${esc(ev.title)}` : 'Nouvel événement';
+
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-footer').style.display = 'flex';
+  document.getElementById('modal-footer').innerHTML = `
+    <button class="btn btn-secondary" onclick="closeModal()">Annuler</button>
+    <button class="btn btn-primary" onclick="submitEventForm(${eventId||'null'})">💾 Enregistrer</button>`;
+
+  document.getElementById('modal-body').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="form-group">
+        <label class="form-label">Titre *</label>
+        <input class="form-input" id="ev-title" value="${esc(ev?.title||'')}">
+      </div>
+      <div class="mob-grid-2">
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Type</label>
+          <select class="form-input" id="ev-type">
+            ${EVENT_TYPES.map(t=>`<option value="${t}" ${(ev?.type||'Stage')===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Statut</label>
+          <select class="form-input" id="ev-status">
+            ${EVENT_STATUSES.map(s=>`<option value="${s}" ${(ev?.status||'Planifié')===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="mob-grid-2">
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Date début *</label>
+          <input class="form-input" type="date" id="ev-date-start" value="${ev?.dateStart||todayISO()}">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Date fin</label>
+          <input class="form-input" type="date" id="ev-date-end" value="${ev?.dateEnd||''}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Lieu</label>
+        <input class="form-input" id="ev-location" value="${esc(ev?.location||'')}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <textarea class="form-input" id="ev-description" rows="2" style="resize:vertical">${esc(ev?.description||'')}</textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">URL (lien externe)</label>
+        <input class="form-input" type="url" id="ev-url" value="${esc(ev?.url||'')}" placeholder="https://…">
+      </div>
+      <div class="mob-grid-2">
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Budget prévu (€)</label>
+          <input class="form-input" type="number" id="ev-budget-expected" value="${ev?.budget?.expected||''}" min="0" step="0.01">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Budget réel (€)</label>
+          <input class="form-input" type="number" id="ev-budget-actual" value="${ev?.budget?.actual||''}" min="0" step="0.01">
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function submitEventForm(eventId) {
+  const title = document.getElementById('ev-title').value.trim();
+  if (!title) { showToast('Titre requis','error'); return; }
+  const dateStart = document.getElementById('ev-date-start').value;
+  if (!dateStart) { showToast('Date de début requise','error'); return; }
+
+  const ev = eventId ? APP.events.find(e=>e.id===eventId) : null;
+
+  const updated = {
+    id:            ev ? ev.id : nextEventId(),
+    title,
+    type:          document.getElementById('ev-type').value,
+    status:        document.getElementById('ev-status').value,
+    dateStart,
+    dateEnd:       document.getElementById('ev-date-end').value || null,
+    location:      document.getElementById('ev-location').value.trim(),
+    description:   document.getElementById('ev-description').value.trim(),
+    url:           document.getElementById('ev-url').value.trim(),
+    budget: {
+      expected: parseFloat(document.getElementById('ev-budget-expected').value)||0,
+      actual:   parseFloat(document.getElementById('ev-budget-actual').value)||0,
+    },
+    registrations: ev ? (ev.registrations||[]) : [],
+    checklist:     ev ? (ev.checklist||[])     : DEFAULT_CHECKLIST.map((label,i)=>({id:i+1,label,checked:false,checkedBy:null,checkedAt:null})),
+  };
+
+  if (ev) {
+    const idx = APP.events.findIndex(e=>e.id===eventId);
+    APP.events[idx] = updated;
+  } else {
+    APP.events.push(updated);
+  }
+
+  await saveEvents();
+  await logAudit(ev?'event_updated':'event_created', {title});
+  closeModal();
+  showToast(ev?'Événement modifié ✅':'Événement créé ✅','ok');
+  renderEvenements();
+}
+
+async function deleteEventConfirm(eventId) {
+  const ev = APP.events.find(e=>e.id===eventId);
+  if (!ev) return;
+  const ok = await confirmDialog(`Supprimer "${ev.title}" ?`, 'Cette action est irréversible.');
+  if (!ok) return;
+  APP.events = APP.events.filter(e=>e.id!==eventId);
+  await saveEvents();
+  await logAudit('event_deleted', {title:ev.title});
+  showToast('Événement supprimé','ok');
+  renderEvenements();
+}
+
+function openEventDetail(eventId) {
+  const ev = APP.events.find(e=>e.id===eventId);
+  if (!ev) return;
+  const canEdit = ['admin','gestionnaire'].includes(APP.role);
+
+  document.getElementById('modal-title').textContent = esc(ev.title);
+  document.getElementById('modal-footer').style.display = 'none';
+  renderEventDetailContent(ev, 'checklist');
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function renderEventDetailContent(ev, tab) {
+  const canEdit = ['admin','gestionnaire'].includes(APP.role);
+  const tabs = ['checklist','inscriptions','budget'];
+
+  document.getElementById('modal-body').innerHTML = `
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px">
+      <span>📅 ${fmtDate(ev.dateStart)}${ev.dateEnd&&ev.dateEnd!==ev.dateStart?' → '+fmtDate(ev.dateEnd):''}</span>
+      ${ev.location?`<span>📍 ${esc(ev.location)}</span>`:''}
+      <span style="font-weight:600">${ev.status}</span>
+      <span>${ev.type}</span>
+    </div>
+    ${ev.url?`<a href="${esc(ev.url)}" target="_blank" style="color:var(--gold);font-size:13px;display:block;margin-bottom:10px">🔗 ${esc(ev.url)}</a>`:''}
+    <div class="tabs" style="margin-bottom:14px">
+      ${tabs.map(t=>`<button class="tab-btn${t===tab?' active':''}" onclick="renderEventDetailContent(APP.events.find(e=>e.id===${ev.id}),'${t}')">
+        ${t==='checklist'?'✅ Tâches':t==='inscriptions'?'👥 Inscrits':'💶 Budget'}
+      </button>`).join('')}
+    </div>
+    <div id="event-detail-body"></div>`;
+
+  const el = document.getElementById('event-detail-body');
+
+  if (tab === 'checklist') {
+    const items = ev.checklist||[];
+    const done  = items.filter(c=>c.checked).length;
+    el.innerHTML = `
+      <div style="margin-bottom:10px">
+        <div style="height:6px;background:var(--bg3);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${items.length?Math.round(done/items.length*100):0}%;background:var(--ok);transition:width .3s"></div>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px">${done}/${items.length} tâches complétées</div>
+      </div>
+      ${items.map(item=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+          <input type="checkbox" ${item.checked?'checked':''} ${canEdit?`onchange="toggleEventChecklist(${ev.id},${item.id},this.checked)"`:''} style="width:18px;height:18px;accent-color:var(--ok);flex-shrink:0" ${canEdit?'':'disabled'}>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;${item.checked?'text-decoration:line-through;color:var(--text3)':''}">${esc(item.label)}</div>
+            ${item.checked&&item.checkedBy?`<div style="font-size:11px;color:var(--text3)">${esc(item.checkedBy)} — ${item.checkedAt?fmtDate(item.checkedAt.split('T')[0]):'—'}</div>`:''}
+          </div>
+        </div>`).join('')}
+      ${canEdit?`
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <input class="form-input" id="new-checklist-item" placeholder="Nouvelle tâche…" style="flex:1">
+          <button class="btn btn-secondary btn-sm" onclick="addChecklistItem(${ev.id})">+ Ajouter</button>
+        </div>`:''}`;
+
+  } else if (tab === 'inscriptions') {
+    const regs = (ev.registrations||[]).map(id=>APP.members.find(m=>m.id===id)).filter(Boolean);
+    el.innerHTML = `
+      <div style="font-size:13px;color:var(--text2);margin-bottom:10px">${regs.length} inscrit${regs.length!==1?'s':''}</div>
+      ${regs.map(m=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+          <span style="font-size:13px">${esc(m.firstname)} ${esc(m.lastname)} ${beltBadge(m.belt)}</span>
+          ${canEdit?`<button class="btn btn-sm" style="background:#c0392b22;color:var(--red)" onclick="removeEventRegistration(${ev.id},${m.id})">✕</button>`:''}
+        </div>`).join('')}
+      ${canEdit?`
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <select class="form-input" id="add-reg-member" style="flex:1">
+            <option value="">Ajouter un membre…</option>
+            ${APP.members.filter(m=>!(ev.registrations||[]).includes(m.id)).map(m=>`<option value="${m.id}">${esc(m.firstname)} ${esc(m.lastname)}</option>`).join('')}
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="addEventRegistration(${ev.id})">+ Inscrire</button>
+        </div>`:''}`;
+
+  } else if (tab === 'budget') {
+    const exp = ev.budget?.expected||0;
+    const act = ev.budget?.actual||0;
+    const diff = act - exp;
+    el.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;justify-content:space-between;padding:14px;background:var(--bg3);border-radius:var(--r)">
+          <div style="text-align:center;flex:1">
+            <div style="font-size:22px;font-weight:700">${exp.toFixed(2)} €</div>
+            <div style="font-size:12px;color:var(--text2)">Prévu</div>
+          </div>
+          <div style="text-align:center;flex:1">
+            <div style="font-size:22px;font-weight:700">${act.toFixed(2)} €</div>
+            <div style="font-size:12px;color:var(--text2)">Réel</div>
+          </div>
+          <div style="text-align:center;flex:1">
+            <div style="font-size:22px;font-weight:700;color:${diff>0?'var(--red)':diff<0?'var(--ok)':'var(--text)'}">${diff>0?'+':''}${diff.toFixed(2)} €</div>
+            <div style="font-size:12px;color:var(--text2)">Écart</div>
+          </div>
+        </div>
+        ${canEdit?`
+        <div class="mob-grid-2">
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Prévu (€)</label>
+            <input class="form-input" type="number" id="ev-b-exp" value="${exp}" min="0" step="0.01">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Réel (€)</label>
+            <input class="form-input" type="number" id="ev-b-act" value="${act}" min="0" step="0.01">
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="saveEventBudget(${ev.id})">💾 Mettre à jour</button>`:''}
+      </div>`;
+  }
+}
+
+async function toggleEventChecklist(eventId, itemId, checked) {
+  const ev = APP.events.find(e=>e.id===eventId);
+  if (!ev) return;
+  const item = (ev.checklist||[]).find(c=>c.id===itemId);
+  if (!item) return;
+  item.checked   = checked;
+  item.checkedBy = checked ? APP.email : null;
+  item.checkedAt = checked ? new Date().toISOString() : null;
+  await saveEvents();
+  renderEventDetailContent(ev,'checklist');
+}
+
+async function addChecklistItem(eventId) {
+  const ev = APP.events.find(e=>e.id===eventId);
+  if (!ev) return;
+  const label = document.getElementById('new-checklist-item').value.trim();
+  if (!label) return;
+  const maxId = (ev.checklist||[]).reduce((m,c)=>Math.max(m,c.id||0),0);
+  if (!ev.checklist) ev.checklist = [];
+  ev.checklist.push({id:maxId+1,label,checked:false,checkedBy:null,checkedAt:null});
+  await saveEvents();
+  renderEventDetailContent(ev,'checklist');
+}
+
+async function addEventRegistration(eventId) {
+  const ev  = APP.events.find(e=>e.id===eventId);
+  const mid = parseInt(document.getElementById('add-reg-member').value);
+  if (!ev||!mid) return;
+  if (!ev.registrations) ev.registrations = [];
+  if (!ev.registrations.includes(mid)) {
+    ev.registrations.push(mid);
+    await saveEvents();
+    showToast('Membre inscrit ✅','ok');
+    renderEventDetailContent(ev,'inscriptions');
+  }
+}
+
+async function removeEventRegistration(eventId, memberId) {
+  const ev = APP.events.find(e=>e.id===eventId);
+  if (!ev) return;
+  ev.registrations = (ev.registrations||[]).filter(id=>id!==memberId);
+  await saveEvents();
+  renderEventDetailContent(ev,'inscriptions');
+}
+
+async function saveEventBudget(eventId) {
+  const ev = APP.events.find(e=>e.id===eventId);
+  if (!ev) return;
+  if (!ev.budget) ev.budget = {};
+  ev.budget.expected = parseFloat(document.getElementById('ev-b-exp').value)||0;
+  ev.budget.actual   = parseFloat(document.getElementById('ev-b-act').value)||0;
+  await saveEvents();
+  showToast('Budget mis à jour ✅','ok');
+  renderEventDetailContent(ev,'budget');
+}
+
+/* ── Events in Member Portal ──────────────────────────────────── */
+function renderPortalEvents(el) {
+  const now = todayISO();
+  const upcoming = (APP.events||[])
+    .filter(e => (e.status==='Planifié'||e.status==='Confirmé') && e.dateStart >= now)
+    .sort((a,b)=>a.dateStart.localeCompare(b.dateStart));
+
+  if (upcoming.length === 0) {
+    el.innerHTML = `<div class="card"><p style="color:var(--text2);font-size:13px">Aucun événement à venir.</p></div>`;
+    return;
+  }
+
+  const memberId = APP.portalMember?.id;
+  el.innerHTML = upcoming.map(ev => {
+    const registered = (ev.registrations||[]).includes(memberId);
+    return `
+    <div class="card" style="margin-bottom:10px">
+      <div style="font-weight:600;margin-bottom:4px">${esc(ev.title)}</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">
+        📅 ${fmtDate(ev.dateStart)}${ev.dateEnd&&ev.dateEnd!==ev.dateStart?' → '+fmtDate(ev.dateEnd):''}
+        ${ev.location?` · 📍 ${esc(ev.location)}`:''}
+        · <span style="font-weight:600">${ev.status}</span>
+      </div>
+      ${ev.description?`<div style="font-size:12px;color:var(--text2);margin-bottom:8px">${esc(ev.description)}</div>`:''}
+      ${memberId ? `
+        <button class="btn btn-sm ${registered?'btn-secondary':'btn-primary'}" onclick="togglePortalRegistration(${ev.id})">
+          ${registered?'✓ Inscrit — Se désinscrire':'S\'inscrire'}
+        </button>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function togglePortalRegistration(eventId) {
+  const ev = APP.events.find(e=>e.id===eventId);
+  const memberId = APP.portalMember?.id;
+  if (!ev||!memberId) return;
+  if (!ev.registrations) ev.registrations = [];
+  const idx = ev.registrations.indexOf(memberId);
+  if (idx>=0) {
+    ev.registrations.splice(idx,1);
+    showToast('Désinscription effectuée','ok');
+  } else {
+    ev.registrations.push(memberId);
+    showToast('Inscription enregistrée ✅','ok');
+  }
+  // Save via pending (member can't write to encrypted data directly)
+  try {
+    await dbRef(`dojo/pending/${APP.uid}/events/${eventId}`).set({
+      eventId, memberId, action: idx>=0 ? 'unregister':'register',
+      submittedAt: new Date().toISOString()
+    });
+    showToast(idx>=0?'Désinscription envoyée':'Inscription envoyée ✅','ok');
+  } catch(e) {
+    showToast('Erreur: '+e.message,'error');
+  }
+  // Refresh events section
+  const el = document.getElementById('portal-events-list');
+  if (el) renderPortalEvents(el);
+}
+
 function renderObligations() {
   document.getElementById('content').innerHTML = `
   <div class="page-section legal-page">
@@ -3025,7 +3455,7 @@ function openMemberDetailModal(memberId) {
 }
 
 function renderMemberDetailContent(m, tab) {
-  const tabs = ['profil','presences','paiements'];
+  const tabs = ['profil','presences','paiements','evenements'];
   document.getElementById('modal-body').innerHTML = `
     <div class="tabs" style="margin-bottom:16px">
       ${tabs.map(t => `
@@ -3086,6 +3516,9 @@ function renderMemberDetailContent(m, tab) {
         <button class="btn btn-secondary btn-sm" onclick="closeModal();deleteMemberConfirm(${m.id})">🗑️ Supprimer</button>
       </div>`;
 
+  } else if (tab === 'evenements') {
+    el.innerHTML = '<div id="portal-events-list"></div>';
+    renderPortalEvents(document.getElementById('portal-events-list'));
   } else if (tab === 'presences') {
     const memberSessions = APP.sessions
       .filter(s => (s.attendees||[]).includes(m.id))
@@ -3577,6 +4010,9 @@ function renderPortalTab(tab) {
             </div>`).join('')}
       </div>`;
 
+  } else if (tab === 'evenements') {
+    el.innerHTML = '<div id="portal-events-list"></div>';
+    renderPortalEvents(document.getElementById('portal-events-list'));
   } else if (tab === 'presences') {
     const attended = (APP.sessions||[]).filter(s => (s.attendees||[]).includes(m.id));
     const total = (APP.sessions||[]).length;
