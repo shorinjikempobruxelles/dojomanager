@@ -915,6 +915,14 @@ async function loadAllData() {
       APP.pendingCount = count;
       updatePendingBadge();
     });
+    // Load events (unencrypted)
+    const evSnap = await dbRef('dojo/dojo_events').get();
+    const evRaw = evSnap.val();
+    if (evRaw) {
+      APP.events = Array.isArray(evRaw) ? evRaw : Object.values(evRaw);
+    } else {
+      APP.events = [];
+    }
     hideLoader();
   } catch(e) { hideLoader(); showToast('Erreur chargement données: '+e.message,'error'); }
 }
