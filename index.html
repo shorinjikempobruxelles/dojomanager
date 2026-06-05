@@ -772,6 +772,7 @@ function initFirebase() {
   if (firebase.apps.length === 0) firebase.initializeApp(FIREBASE_CONFIG);
   APP.db = firebase.database();
   APP.auth = firebase.auth();
+  APP.firebaseConfig = FIREBASE_CONFIG;
 }
 function dbRef(path) { return APP.db.ref(path); }
 
@@ -2312,6 +2313,42 @@ function renderUtilisateurs() {
     </div>`;
 }
 
+function openUserFormForMember(memberId) {
+  // Find existing linked user account for this member
+  const m = APP.members.find(x=>x.id===memberId);
+  if (!m) return;
+  const existing = APP.users.find(u=>Number(u.memberId)===memberId);
+  if (existing) {
+    openUserForm(existing.uid);
+    return;
+  }
+  // Pre-fill email and link memberId
+  const memberOpts = '<option value="">— Aucun —</option>' +
+    APP.members.sort((a,b)=>a.lastname.localeCompare(b.lastname))
+      .map(x=>`<option value="${x.id}" ${x.id===memberId?'selected':''}>${esc(x.lastname)} ${esc(x.firstname)}</option>`).join('');
+
+  const body = `<form onsubmit="submitUserForm(event,'');return false">
+    <div class="form-group" style="margin-bottom:12px"><label>Email *</label>
+      <input type="email" id="uf-email" required value="${esc(m.email||'')}"></div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label>Rôle *</label>
+      <select id="uf-role">
+        <option value="member" selected>member</option>
+        <option value="admin">admin</option>
+        <option value="gestionnaire">gestionnaire</option>
+        <option value="organisateur">organisateur</option>
+        <option value="board">board</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:16px"><label>Membre lié</label><select id="uf-member">${memberOpts}</select></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button type="button" class="btn btn-secondary" onclick="closeModal()">Annuler</button>
+      <button type="submit" class="btn btn-primary">Créer le compte</button>
+    </div>
+  </form>`;
+  openModal(`Créer un compte — ${esc(m.firstname)} ${esc(m.lastname)}`, body);
+}
+
 function openUserForm(uid) {
   const u = uid ? APP.users.find(x=>x.uid===uid) : null;
   const memberOpts = '<option value="">— Aucun —</option>' +
@@ -2341,47 +2378,69 @@ function openUserForm(uid) {
 
 async function submitUserForm(e, uid) {
   e.preventDefault();
-  const role = document.getElementById('uf-role').value;
+  const role     = document.getElementById('uf-role').value;
   const memberId = parseInt(document.getElementById('uf-member').value)||null;
+
   if (uid) {
+    // Edit existing user
     const u = APP.users.find(x=>x.uid===uid);
     if (u) { u.role=role; u.memberId=memberId; }
     await saveUsers();
-    // Update roles in firebase
     await dbRef(`dojo/roles/${uid}`).update({role, memberId});
     await logAudit('Modification utilisateur', `${u?.email} → ${role}`);
+    closeModal(); renderUtilisateurs();
     showToast('Utilisateur mis à jour','ok');
-  } else {
-    const email = document.getElementById('uf-email').value.trim();
-    if (!email) return showToast('Email requis','error');
-    showLoader('Création utilisateur…');
-    try {
-      const methods = await APP.auth.fetchSignInMethodsForEmail(email);
-      let newUid;
-      if (methods.length>0) {
-        showToast('Un compte existe déjà avec cet email. Retrouvez son UID dans Firebase Console.','warn');
-        hideLoader(); closeModal(); return;
-      }
-      // Create via Firebase (admin only way without SDK: we create, then send reset)
-      const tmpPass = 'TmpPass#'+Math.random().toString(36).slice(2,10);
-      const cred = await APP.auth.createUserWithEmailAndPassword(email, tmpPass);
-      newUid = cred.user.uid;
-      await APP.auth.sendPasswordResetEmail(email);
-      await APP.auth.signOut();
-      // Re-login with session — we lost auth, need to reload
-      const user = {uid:newUid, email, role, memberId};
-      APP.users.push(user);
-      await saveUsers();
-      await dbRef(`dojo/roles/${newUid}`).set({role, email, memberId, belt:null, firstname:'', lastname:''});
-      await logAudit('Création utilisateur', `${email} — ${role}`);
-      hideLoader(); closeModal();
-      showToast(`Compte créé pour ${email}. Email de réinitialisation envoyé.`,'ok');
-      // We need to re-login as admin
-      showToast('Session expirée — reconnectez-vous.','warn');
-      setTimeout(()=>doLogout(),3000);
-    } catch(err) { hideLoader(); showToast(err.message,'error'); }
+    return;
   }
-  closeModal(); renderUtilisateurs();
+
+  // Create new user
+  const email = document.getElementById('uf-email').value.trim();
+  if (!email) return showToast('Email requis','error');
+  showLoader('Création utilisateur…');
+
+  try {
+    // Check if a role entry already exists for this email
+    const rolesSnap = await dbRef('dojo/roles').once('value');
+    const roles = rolesSnap.val() || {};
+    const existingEntry = Object.entries(roles).find(([,v]) => v.email === email);
+
+    if (existingEntry) {
+      // Account exists — just update/create role entry
+      const existingUid = existingEntry[0];
+      await dbRef(`dojo/roles/${existingUid}`).update({role, memberId: memberId||null});
+      const user = {uid:existingUid, email, role, memberId};
+      const idx = APP.users.findIndex(u=>u.uid===existingUid);
+      if (idx>=0) APP.users[idx]=user; else APP.users.push(user);
+      await saveUsers();
+      await logAudit('Rôle mis à jour', `${email} → ${role}`);
+      hideLoader(); closeModal(); renderUtilisateurs();
+      showToast(`Rôle mis à jour pour ${email} ✅`,'ok');
+      return;
+    }
+
+    // Create new Firebase account using secondary app (avoids signing out admin)
+    const secondaryApp = firebase.initializeApp(APP.firebaseConfig, 'secondary-' + Date.now());
+    const secondaryAuth = secondaryApp.auth();
+    const tmpPass = 'TmpPass#' + Math.random().toString(36).slice(2,10);
+    const cred = await secondaryAuth.createUserWithEmailAndPassword(email, tmpPass);
+    const newUid = cred.user.uid;
+    await secondaryAuth.sendPasswordResetEmail(email);
+    await secondaryApp.delete();
+
+    const user = {uid:newUid, email, role, memberId};
+    APP.users.push(user);
+    await saveUsers();
+    await dbRef(`dojo/roles/${newUid}`).set({role, email, memberId:memberId||null, belt:null, firstname:'', lastname:''});
+    await logAudit('Création utilisateur', `${email} — ${role}`);
+    hideLoader(); closeModal(); renderUtilisateurs();
+    showToast(`Compte créé pour ${email} — email de réinitialisation envoyé ✅`,'ok');
+  } catch(err) {
+    hideLoader();
+    let msg = err.message;
+    if (err.code==='auth/email-already-in-use') msg = 'Cet email est déjà utilisé. Rechargez la page et réessayez.';
+    if (err.code==='auth/invalid-email') msg = 'Adresse email invalide.';
+    showToast(msg,'error');
+  }
 }
 
 // ============================================================
@@ -3561,7 +3620,28 @@ function renderMemberDetailContent(m, tab) {
           ? `<span style="color:#2ecc71;font-weight:600">✓ Éligible pour ${esc(nextBelt(m.belt)||'—')}</span>`
           : `<span style="color:var(--text2)">${esc(eligible.reason||'Non éligible')}</span>`}
       </div>
-      <div style="display:flex;gap:8px;margin-top:16px">
+      ${(() => {
+        const linkedUser = APP.users.find(u => Number(u.memberId) === m.id);
+        const roleColors = {admin:'badge-dan',gestionnaire:'badge-kyu',organisateur:'badge-info',board:'badge-minarai',member:'badge-success'};
+        return linkedUser
+          ? `<div style="margin-top:14px;padding:10px 12px;background:var(--bg3);border-radius:var(--r);font-size:13px">
+               <div style="color:var(--text2);font-size:11px;margin-bottom:4px">COMPTE CONNECTÉ</div>
+               <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                 <div>
+                   <span class="badge ${roleColors[linkedUser.role]||'badge-minarai'}">${linkedUser.role}</span>
+                   <span style="margin-left:6px;color:var(--text2)">${esc(linkedUser.email)}</span>
+                 </div>
+                 <button class="btn btn-sm btn-secondary" onclick="openUserForm('${linkedUser.uid}')">✏️</button>
+               </div>
+             </div>`
+          : APP.role==='admin'
+            ? `<div style="margin-top:14px;padding:10px 12px;background:var(--bg3);border-radius:var(--r);font-size:13px">
+                 <div style="color:var(--text2);font-size:11px;margin-bottom:6px">AUCUN COMPTE CONNECTÉ</div>
+                 <button class="btn btn-sm btn-secondary" onclick="openUserFormForMember(${m.id})">👤 Créer un compte</button>
+               </div>`
+            : '';
+      })()}
+      <div style="display:flex;gap:8px;margin-top:12px">
         <button class="btn btn-primary btn-sm" onclick="closeModal();openMemberForm(${m.id})">✏️ Modifier</button>
         <button class="btn btn-secondary btn-sm" onclick="syncMemberToPortal(${m.id})" title="Met à jour les données visibles par le membre dans son portail">🔄 Sync portail</button>
         <button class="btn btn-secondary btn-sm" onclick="closeModal();deleteMemberConfirm(${m.id})">🗑️ Supprimer</button>
