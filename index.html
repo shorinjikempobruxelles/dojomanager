@@ -408,7 +408,7 @@ h3{font-size:15px;font-weight:600}
       <div class="vault-section">
         <label for="login-vault">🔐 Phrase secrète du coffre</label>
         <input type="password" id="login-vault" name="vault" autocomplete="off" placeholder="Laisser vide si vous êtes membre">
-        <div class="vault-hint">⚠️ Réservé aux admins, gestionnaires et CA — les membres laissent ce champ vide</div>
+        <div class="vault-hint">⚠️ Réservé aux admins, gestionnaires et CA — membres et organisateurs laissent ce champ vide</div>
       </div>
       <button type="submit" class="btn btn-primary btn-block" style="margin-top:24px">Se connecter</button>
     </form>
@@ -893,7 +893,6 @@ async function loadAllData() {
     APP.sessions  = (raw.dojo_sessions ? decryptData(raw.dojo_sessions, APP.key) : null) || [];
     APP.payments  = (raw.dojo_payments ? decryptData(raw.dojo_payments, APP.key) : null) || [];
     APP.auditLog  = (raw.dojo_audit    ? decryptData(raw.dojo_audit, APP.key)    : null) || [];
-    APP.events    = (raw.dojo_events   ? decryptData(raw.dojo_events, APP.key)    : null) || [];
     APP.users     = (raw.dojo_users    ? decryptData(raw.dojo_users, APP.key)    : null) || [];
 
     // Live pending count listener
@@ -938,7 +937,7 @@ async function saveSessions() { await dbRef('dojo/dojo_sessions').set(encryptDat
 async function savePayments() { await dbRef('dojo/dojo_payments').set(encryptData(APP.payments,APP.key)); }
 async function saveUsers()    { await dbRef('dojo/dojo_users').set(encryptData(APP.users,APP.key)); }
 async function saveAudit()    { await dbRef('dojo/dojo_audit').set(encryptData(APP.auditLog,APP.key)); }
-async function saveEvents()    { await dbRef('dojo/dojo_events').set(encryptData(APP.events,APP.key)); }
+async function saveEvents()    { await dbRef('dojo/dojo_events').set(APP.events); }
 function nextEventId() { return APP.events.length>0 ? Math.max(...APP.events.map(e=>e.id||0))+1 : 1; }
 
 function nextMemberId() { return APP.members.length>0 ? Math.max(...APP.members.map(m=>m.id||0))+1 : 1; }
@@ -965,11 +964,23 @@ async function doLogin(e) {
 
     if (roleData && roleData.role === 'member') {
       APP.role = 'member';
-      // Update role entry with latest email
       await dbRef(`dojo/roles/${APP.uid}`).update({email});
       hideLoader();
       saveSession();
       showMemberPortal(roleData);
+      return;
+    }
+
+    // Organisateur — no vault passphrase needed, events are unencrypted
+    if (roleData && roleData.role === 'organisateur') {
+      APP.role = 'organisateur';
+      APP.members = []; APP.sessions = []; APP.payments = [];
+      const evSnap = await dbRef('dojo/dojo_events').get();
+      APP.events = evSnap.val() || [];
+      if (!Array.isArray(APP.events)) APP.events = Object.values(APP.events);
+      saveSession();
+      hideLoader();
+      showAdminApp();
       return;
     }
 
@@ -1213,11 +1224,18 @@ function showAdminApp() {
   const initials = email.slice(0,2).toUpperCase();
   document.getElementById('sidebar-avatar').textContent = initials;
   document.getElementById('sidebar-name').textContent = email;
-  document.getElementById('sidebar-role').textContent = {admin:'Administrateur',gestionnaire:'Gestionnaire',board:'Conseil d\'administration'}[APP.role]||APP.role;
+  document.getElementById('sidebar-role').textContent = {admin:'Administrateur',gestionnaire:'Gestionnaire',board:'Conseil d\'administration',organisateur:'Organisateur'}[APP.role]||APP.role;
 
   // Admin-only nav
   const adminNav = document.getElementById('admin-nav-section');
   if (APP.role==='admin') adminNav.style.display='block'; else adminNav.style.display='none';
+  // Organisateur: only show events + dashboard
+  if (APP.role==='organisateur') {
+    document.querySelectorAll('.nav-item').forEach(el => {
+      const id = el.id || '';
+      el.style.display = (id==='' || id==='nav-dashboard' || id==='nav-evenements') ? '' : 'none';
+    });
+  }
   // Notif btn for admin
   const notifBtn = document.getElementById('notif-btn');
   if (notifBtn) notifBtn.style.display = (APP.role==='admin' && APP.pendingCount>0)?'flex':'none';
@@ -2274,7 +2292,7 @@ function renderUtilisateurs() {
           const m = u.memberId ? APP.members.find(x=>x.id===u.memberId) : null;
           return `<tr>
             <td>${esc(u.email)}</td>
-            <td><span class="badge ${u.role==='admin'?'badge-dan':u.role==='gestionnaire'?'badge-kyu':'badge-minarai'}">${u.role}</span></td>
+            <td><span class="badge ${u.role==='admin'?'badge-dan':u.role==='gestionnaire'?'badge-kyu':u.role==='organisateur'?'badge-info':'badge-minarai'}">${u.role}</span></td>
             <td>${m?`${esc(m.firstname)} ${esc(m.lastname)}`:'<span style="color:var(--text3)">—</span>'}</td>
             <td><button class="btn btn-sm btn-secondary" onclick="openUserForm('${u.uid}')">✏️</button></td>
           </tr>`;
@@ -2299,6 +2317,7 @@ function openUserForm(uid) {
       <select id="uf-role">
         <option value="admin" ${u&&u.role==='admin'?'selected':''}>admin</option>
         <option value="gestionnaire" ${u&&u.role==='gestionnaire'?'selected':''}>gestionnaire</option>
+        <option value="organisateur" ${u&&u.role==='organisateur'?'selected':''}>organisateur</option>
         <option value="board" ${u&&u.role==='board'?'selected':''}>board</option>
         <option value="member" ${u&&u.role==='member'?'selected':''}>member</option>
       </select>
@@ -3043,7 +3062,7 @@ async function deleteEventConfirm(eventId) {
 function openEventDetail(eventId) {
   const ev = APP.events.find(e=>e.id===eventId);
   if (!ev) return;
-  const canEdit = ['admin','gestionnaire'].includes(APP.role);
+  const canEdit = ['admin','gestionnaire','organisateur'].includes(APP.role);
 
   document.getElementById('modal-title').textContent = esc(ev.title);
   document.getElementById('modal-footer').style.display = 'none';
@@ -3052,7 +3071,7 @@ function openEventDetail(eventId) {
 }
 
 function renderEventDetailContent(ev, tab) {
-  const canEdit = ['admin','gestionnaire'].includes(APP.role);
+  const canEdit = ['admin','gestionnaire','organisateur'].includes(APP.role);
   const tabs = ['checklist','inscriptions','budget'];
 
   document.getElementById('modal-body').innerHTML = `
@@ -3099,7 +3118,10 @@ function renderEventDetailContent(ev, tab) {
   } else if (tab === 'inscriptions') {
     const regs = (ev.registrations||[]).map(id=>APP.members.find(m=>m.id===id)).filter(Boolean);
     el.innerHTML = `
-      <div style="font-size:13px;color:var(--text2);margin-bottom:10px">${regs.length} inscrit${regs.length!==1?'s':''}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="font-size:13px;color:var(--text2)">${regs.length} inscrit${regs.length!==1?'s':''}</span>
+        ${regs.length>0?`<button class="btn btn-sm btn-secondary" onclick="exportEventParticipants(${ev.id})">⬇ Export CSV</button>`:''}
+      </div>
       ${regs.map(m=>`
         <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
           <span style="font-size:13px">${esc(m.firstname)} ${esc(m.lastname)} ${beltBadge(m.belt)}</span>
@@ -3264,6 +3286,27 @@ async function togglePortalRegistration(eventId) {
   // Refresh events section
   const el = document.getElementById('portal-events-list');
   if (el) renderPortalEvents(el);
+}
+
+function exportEventParticipants(eventId) {
+  const ev = APP.events.find(e=>e.id===eventId);
+  if (!ev) return;
+  const regs = (ev.registrations||[]).map(id=>APP.members.find(m=>m.id===id)).filter(Boolean);
+  if (regs.length===0) { showToast('Aucun inscrit','warn'); return; }
+
+  const headers = ['Prénom','Nom','Email','Téléphone','Date de naissance','Ceinture','FBSK'];
+  const rows = regs.map(m=>[
+    m.firstname||'', m.lastname||'', m.email||'', m.phone||'',
+    m.dob ? fmtDate(m.dob) : '',
+    m.belt||'', m.fbsk||''
+  ]);
+  const csv = [headers,...rows].map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `participants-${ev.title.replace(/[^a-z0-9]/gi,'-')}-${ev.dateStart}.csv`;
+  a.click();
+  showToast(`${regs.length} participant(s) exportés ✅`,'ok');
 }
 
 function renderObligations() {
