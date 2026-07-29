@@ -211,6 +211,7 @@ h3{font-size:15px;font-weight:600}
 
 /* ── Attendance page ──────────────────────────────────── */
 .presence-layout{display:grid;grid-template-columns:300px 1fr;gap:20px;height:calc(100vh - var(--topbar-h) - 80px);overflow:hidden}
+.presence-right{overflow-y:auto;height:100%}
 .presence-left{display:flex;flex-direction:column;gap:12px;overflow-y:auto}
 .presence-panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:16px}
 .presence-panel h4{font-size:13px;font-weight:600;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em}
@@ -1754,7 +1755,7 @@ function renderPresences() {
         </div>
       </div>
       <!-- RIGHT PANEL -->
-      <div>
+      <div class="presence-right">
         <div class="tabs" style="margin-bottom:16px">
           <button class="tab-btn${APP.presenceSubTab==='par-membre'?' active':''}" onclick="switchPresenceTab('par-membre')">📊 Par membre</button>
           <button class="tab-btn${APP.presenceSubTab==='par-mois'?' active':''}" onclick="switchPresenceTab('par-mois')">📅 Par mois</button>
