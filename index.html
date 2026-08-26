@@ -930,6 +930,23 @@ async function loadAllData() {
     hideLoader();
     // Migrate old enrol format to seasons
     APP.members = APP.members.map(migrateMemberSeasons);
+    // Merge any self-enrollments submitted via member portal
+    const enrollSnap = await dbRef('dojo/enrollments').get();
+    const enrollData = enrollSnap.val() || {};
+    let enrollChanged = false;
+    const blank = {adhesion:false,form:false,medical:false,photo:false,paid:false,licence:false};
+    Object.entries(enrollData).forEach(([season, members]) => {
+      Object.entries(members||{}).forEach(([memberId, val]) => {
+        if (!val) return;
+        const mid = parseInt(memberId);
+        const m = APP.members.find(x=>x.id===mid);
+        if (m) {
+          if (!m.seasons) m.seasons = {};
+          if (!m.seasons[season]) { m.seasons[season] = {...blank}; enrollChanged = true; }
+        }
+      });
+    });
+    if (enrollChanged) await saveMembers();
     // Initialise current season
     APP.currentSeason = currentSeasonStr();
   } catch(e) { hideLoader(); showToast('Erreur chargement données: '+e.message,'error'); }
@@ -1359,8 +1376,7 @@ function onSeasonChange() {
 
 async function createNewSeason() {
   const seasons = allSeasons();
-  // Calculate next season from the latest existing one
-  const latest = seasons[0]; // e.g. '2025-2026'
+  const latest = seasons[0];
   const latestStart = parseInt(latest.split('-')[0]);
   const nextStart = latestStart + 1;
   const nextSeason = `${nextStart}-${nextStart+1}`;
@@ -1381,11 +1397,27 @@ async function createNewSeason() {
   });
 
   await saveMembers();
+  // Publish season list publicly so member portal can read it
+  const publicSeasons = allSeasons();
+  await dbRef('dojo/public_seasons').set(publicSeasons);
   await logAudit('Nouvelle saison créée', nextSeason);
   APP.currentSeason = nextSeason;
   updateSeasonSelector();
   showPage('inscriptions');
   showToast(`Saison ${nextSeason.replace('-','–')} créée !`, 'ok');
+}
+
+async function addMemberToSeason(memberId, season) {
+  if (!season) return;
+  const m = APP.members.find(x=>x.id===memberId);
+  if (!m) return;
+  if (!m.seasons) m.seasons = {};
+  if (m.seasons[season]) { showToast('Déjà inscrit pour cette saison.','warn'); return; }
+  m.seasons[season] = {adhesion:false,form:false,medical:false,photo:false,paid:false,licence:false};
+  await saveMembers();
+  await logAudit('Ajout saison', m.firstname+' '+m.lastname+' → '+season);
+  showToast(m.firstname+' '+m.lastname+' ajouté(e) à la saison '+season.replace('-','–')+'.','ok');
+  openMemberForm(memberId);
 }
 
 async function moveMemberToSeason(memberId, fromSeason, toSeason) {
@@ -1420,7 +1452,19 @@ function renderMemberSeasonsList(member) {
   if (!member.seasons || !Object.keys(member.seasons).length) return '<p style="color:var(--text3);font-size:13px">Aucune saison enregistrée.</p>';
   const seasons = allSeasons();
   const memberSeasons = Object.keys(member.seasons).sort(function(a,b){return b.localeCompare(a);});
-  return memberSeasons.map(function(s) {
+  const notEnrolled = seasons.filter(function(s){return !member.seasons[s];});
+
+  // Add to season button
+  const addBlock = APP.role!=='board' && notEnrolled.length ? (
+    '<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);">'
+    + '<select id="add-season-sel-'+member.id+'" style="flex:1;font-size:13px;padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--text)">'
+    + notEnrolled.map(function(s){return '<option value="'+s+'">'+s.replace('-','–')+'</option>';}).join('')
+    + '</select>'
+    + '<button class="btn btn-sm btn-primary" onclick="addMemberToSeason('+member.id+',document.getElementById(\'add-season-sel-'+member.id+'\').value)">+ Ajouter</button>'
+    + '</div>'
+  ) : '';
+
+  const rows = memberSeasons.map(function(s) {
     const e = member.seasons[s];
     const done = ['adhesion','form','medical','photo','paid','licence'].filter(function(f){return e[f];}).length;
     const otherSeasons = seasons.filter(function(x){return x!==s;});
@@ -1442,6 +1486,8 @@ function renderMemberSeasonsList(member) {
       +'<span style="font-size:12px;color:var(--text3)">'+done+'/6 étapes</span>'
       +statusBadge+actions+'</div>';
   }).join('');
+
+  return addBlock + rows;
 }
 
 function renderDashboard() {
@@ -4185,12 +4231,87 @@ async function submitUnlinkedProfile() {
   }
 }
 
+async function renderPortalSaisons(el) {
+  const m = APP.portalMember;
+  const uid = APP.uid;
+  const memberId = APP.portalRoleData && APP.portalRoleData.memberId;
+  if (!memberId) { el.innerHTML = '<p style="color:var(--text3)">Profil non encore lié.</p>'; return; }
+
+  el.innerHTML = '<p style="color:var(--text3);font-size:13px">Chargement des saisons...</p>';
+
+  // Load public seasons list
+  let publicSeasons = [];
+  try {
+    const snap = await dbRef('dojo/public_seasons').get();
+    publicSeasons = snap.val() || [];
+  } catch(e) {}
+
+  // Load member's own enrollments
+  let myEnrollments = {};
+  try {
+    const snap = await dbRef('dojo/enrollments').get();
+    const all = snap.val() || {};
+    Object.entries(all).forEach(function(entry) {
+      const season = entry[0], members = entry[1];
+      if (members && members[memberId]) myEnrollments[season] = true;
+    });
+  } catch(e) {}
+
+  // Also check role data for enrolled seasons (set by admin)
+  const roleSeasons = (APP.portalRoleData && APP.portalRoleData.enrolledSeasons) || [];
+  roleSeasons.forEach(function(s) { myEnrollments[s] = true; });
+
+  if (!publicSeasons.length) {
+    el.innerHTML = '<div class="card"><p style="color:var(--text3);font-size:13px">Aucune saison disponible pour le moment. Contactez votre administrateur.</p></div>';
+    return;
+  }
+
+  const rows = publicSeasons.map(function(season) {
+    const enrolled = !!myEnrollments[season];
+    const label = season.replace('-','–');
+    if (enrolled) {
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border);">'
+        + '<div><div style="font-weight:600;font-size:14px">'+label+'</div>'
+        + '<div style="font-size:12px;color:var(--ok);margin-top:2px">Inscrit(e)</div></div>'
+        + '<span style="font-size:20px">✅</span>'
+        + '</div>';
+    } else {
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border);">'
+        + '<div><div style="font-weight:600;font-size:14px">'+label+'</div>'
+        + '<div style="font-size:12px;color:var(--text3);margin-top:2px">Non inscrit(e) cette saison</div></div>'
+        + '<button class="btn btn-primary btn-sm" onclick="enrollForSeason(\''+season+'\','+memberId+')">S\'inscrire</button>'
+        + '</div>';
+    }
+  }).join('');
+
+  el.innerHTML = '<div class="card">'
+    + '<div class="card-title">Mes saisons</div>'
+    + rows
+    + '</div>'
+    + '<div style="font-size:12px;color:var(--text3);margin-top:10px;padding:0 4px;">En vous inscrivant, vous confirmez votre souhait de participer au club pour cette saison. Votre fiche d\'inscription sera complétée par l\'administrateur.</div>';
+}
+
+async function enrollForSeason(season, memberId) {
+  const uid = APP.uid;
+  try {
+    // Write enrollment to unencrypted Firebase path
+    await dbRef('dojo/enrollments/'+season+'/'+memberId).set({enrolled:true, uid:uid, ts:Date.now()});
+    showToast('Inscription confirmée pour la saison '+season.replace('-','–')+' !', 'ok');
+    // Re-render the tab
+    const el = document.getElementById('portal-tab-body');
+    if (el) renderPortalSaisons(el);
+  } catch(e) {
+    showToast('Erreur : '+e.message, 'error');
+  }
+}
+
 function renderPortalTab(tab) {
   const m = APP.portalMember;
   if (!m) return;
 
   const tabs = [
     { id:'profil', label:'👤 Profil' },
+    { id:'saisons', label:'📋 Saisons' },
     { id:'paiements', label:'💶 Paiements' },
     { id:'presences', label:'📅 Présences' },
   ];
@@ -4207,6 +4328,11 @@ function renderPortalTab(tab) {
     <div id="portal-tab-body" style="padding:16px"></div>`;
 
   const el = document.getElementById('portal-tab-body');
+
+  if (tab === 'saisons') {
+    renderPortalSaisons(el);
+    return;
+  }
 
   if (tab === 'profil') {
     const pending = (APP.pendingChanges||[]).filter(p => p.type==='profile' && p.memberId===m.id && p.status==='pending');
