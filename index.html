@@ -1411,31 +1411,36 @@ async function removeMemberFromSeason(memberId, seasonStr) {
   delete m.seasons[seasonStr];
   await saveMembers();
   await logAudit('Retrait saison', `${m.firstname} ${m.lastname} : saison ${seasonStr} supprimée`);
-  showToast(`${m.firstname} ${m.lastname} retiré(e) de la saison ${seasonStr.replace('-','–')}.`, 'ok');
+  showToast(m.firstname+' '+m.lastname+' retiré(e) de la saison '+seasonStr.replace('-','–')+'.', 'ok');
   closeModal();
   renderMembers();
 }
+
+function renderMemberSeasonsList(member) {
   if (!member.seasons || !Object.keys(member.seasons).length) return '<p style="color:var(--text3);font-size:13px">Aucune saison enregistrée.</p>';
   const seasons = allSeasons();
-  const memberSeasons = Object.keys(member.seasons).sort((a,b)=>b.localeCompare(a));
-  return memberSeasons.map(s => {
+  const memberSeasons = Object.keys(member.seasons).sort(function(a,b){return b.localeCompare(a);});
+  return memberSeasons.map(function(s) {
     const e = member.seasons[s];
-    const done = ['adhesion','form','medical','photo','paid','licence'].filter(f=>e[f]).length;
-    const otherSeasons = seasons.filter(x=>x!==s);
-    const moveOpts = otherSeasons.map(os=>`<option value="${os}">${os.replace('-','–')}</option>`).join('');
-    return `<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      <span style="font-weight:600;font-size:13px;min-width:80px">${s.replace('-','–')}</span>
-      <span style="font-size:12px;color:var(--text3)">${done}/6 étapes</span>
-      ${done>0?'<span class="badge badge-ok">Inscrit</span>':'<span class="badge badge-pending">Vierge</span>'}
-      ${otherSeasons.length&&APP.role!=='board'?`<div style="display:flex;align-items:center;gap:5px;margin-left:auto">
-        <span style="font-size:12px;color:var(--text3)">Déplacer vers :</span>
-        <select id="move-sel-${member.id}-${s}" style="font-size:12px;padding:3px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--text)">
-          ${moveOpts}
-        </select>
-        <button class="btn btn-sm btn-secondary" onclick="moveMemberToSeason(${member.id},'${s}',document.getElementById('move-sel-${member.id}-${s}').value)">→</button>
-        <button class="btn btn-sm btn-danger" onclick="removeMemberFromSeason(${member.id},'${s}')" title="Retirer de cette saison">Retirer</button>
-      </div>`:APP.role!=='board'?`<div style="margin-left:auto"><button class="btn btn-sm btn-danger" onclick="removeMemberFromSeason(${member.id},'${s}')">Retirer</button></div>`:''}
-    </div>`;
+    const done = ['adhesion','form','medical','photo','paid','licence'].filter(function(f){return e[f];}).length;
+    const otherSeasons = seasons.filter(function(x){return x!==s;});
+    const moveOpts = otherSeasons.map(function(os){return '<option value="'+os+'">'+os.replace('-','–')+'</option>';}).join('');
+    const statusBadge = done>0?'<span class="badge badge-ok">Inscrit</span>':'<span class="badge badge-pending">Vierge</span>';
+    let actions = '';
+    if (APP.role !== 'board') {
+      let inner = '';
+      if (otherSeasons.length) {
+        inner += '<span style="font-size:12px;color:var(--text3)">Déplacer vers :</span>';
+        inner += '<select id="move-sel-'+member.id+'-'+s+'" style="font-size:12px;padding:3px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--text)">'+moveOpts+'</select>';
+        inner += '<button class="btn btn-sm btn-secondary" onclick="moveMemberToSeason('+member.id+',\''+s+'\',document.getElementById(\'move-sel-'+member.id+'-'+s+'\').value)">→</button>';
+      }
+      inner += '<button class="btn btn-sm btn-danger" onclick="removeMemberFromSeason('+member.id+',\''+s+'\')">Retirer</button>';
+      actions = '<div style="display:flex;align-items:center;gap:5px;margin-left:auto">'+inner+'</div>';
+    }
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+      +'<span style="font-weight:600;font-size:13px;min-width:80px">'+s.replace('-','–')+'</span>'
+      +'<span style="font-size:12px;color:var(--text3)">'+done+'/6 étapes</span>'
+      +statusBadge+actions+'</div>';
   }).join('');
 }
 
