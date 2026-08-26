@@ -4537,33 +4537,40 @@ async function init() {
     } catch(_) {}
   }
 
-  // Init Firebase
-  initFirebase();
+  try {
+    // Init Firebase
+    initFirebase();
 
-  // Restore session
-  const session = loadSession();
-  if (session) {
-    APP.uid = session.uid;
-    APP.email = session.email;
-    APP.role = session.role;
-    APP.key  = session.key;
-    APP.salt = session.salt;
-    showLoader();
-    try {
-      await loadAllData();
-      hideLoader();
-      if (APP.role === 'member') {
-        showMemberPortal();
-      } else {
-        showAdminApp();
+    // Restore session
+    const session = loadSession();
+    if (session) {
+      APP.uid   = session.uid;
+      APP.email = session.email;
+      APP.role  = session.role;
+      APP.key   = session.key;
+      APP.salt  = session.salt;
+      showLoader();
+      try {
+        await loadAllData();
+        hideLoader();
+        if (APP.role === 'member') {
+          showMemberPortal();
+        } else {
+          showAdminApp();
+        }
+      } catch(e) {
+        hideLoader();
+        clearSession();
+        checkFirstRun();
       }
-    } catch(e) {
-      hideLoader();
-      clearSession();
+    } else {
       checkFirstRun();
     }
-  } else {
-    checkFirstRun();
+  } catch(e) {
+    hideLoader();
+    // Show login screen with error
+    document.getElementById('login-screen').style.display = 'flex';
+    showToast('Erreur d\'initialisation : ' + e.message, 'error');
   }
 }
 
