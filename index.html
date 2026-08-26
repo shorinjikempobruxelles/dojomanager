@@ -4587,9 +4587,11 @@ self.addEventListener('fetch', e => {
   // Restore session
   const session = loadSession();
   if (session) {
-    APP.currentUser = session.user;
-    APP.encKey = session.key;
+    APP.uid = session.uid;
+    APP.email = session.email;
     APP.role = session.role;
+    APP.key  = session.key;
+    APP.salt = session.salt;
     showLoader();
     try {
       await loadAllData();
