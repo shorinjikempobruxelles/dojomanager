@@ -1404,7 +1404,17 @@ async function moveMemberToSeason(memberId, fromSeason, toSeason) {
   closeModal();
 }
 
-function renderMemberSeasonsList(member) {
+async function removeMemberFromSeason(memberId, seasonStr) {
+  const m = APP.members.find(x=>x.id===memberId);
+  if (!m || !m.seasons) return;
+  if (!confirm(`Retirer ${m.firstname} ${m.lastname} de la saison ${seasonStr.replace('-','–')} ?\n\nSes données personnelles sont conservées.`)) return;
+  delete m.seasons[seasonStr];
+  await saveMembers();
+  await logAudit('Retrait saison', `${m.firstname} ${m.lastname} : saison ${seasonStr} supprimée`);
+  showToast(`${m.firstname} ${m.lastname} retiré(e) de la saison ${seasonStr.replace('-','–')}.`, 'ok');
+  closeModal();
+  renderMembers();
+}
   if (!member.seasons || !Object.keys(member.seasons).length) return '<p style="color:var(--text3);font-size:13px">Aucune saison enregistrée.</p>';
   const seasons = allSeasons();
   const memberSeasons = Object.keys(member.seasons).sort((a,b)=>b.localeCompare(a));
@@ -1423,7 +1433,8 @@ function renderMemberSeasonsList(member) {
           ${moveOpts}
         </select>
         <button class="btn btn-sm btn-secondary" onclick="moveMemberToSeason(${member.id},'${s}',document.getElementById('move-sel-${member.id}-${s}').value)">→</button>
-      </div>`:''}
+        <button class="btn btn-sm btn-danger" onclick="removeMemberFromSeason(${member.id},'${s}')" title="Retirer de cette saison">🗑</button>
+      </div>`:APP.role!=='board'?`<div style="margin-left:auto"><button class="btn btn-sm btn-danger" onclick="removeMemberFromSeason(${member.id},'${s}')" title="Retirer de cette saison">🗑</button></div>`:''}
     </div>`;
   }).join('');
 }
