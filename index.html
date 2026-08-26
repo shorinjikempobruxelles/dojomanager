@@ -528,6 +528,7 @@ h3{font-size:15px;font-weight:600}
         <button class="topbar-hamburger" onclick="toggleSidebar()">☰</button>
         <div class="topbar-title" id="topbar-title">Tableau de bord</div>
         <div class="topbar-actions">
+          <select id="season-selector" onchange="onSeasonChange()" style="font-size:12px;padding:5px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--gold2);font-weight:600;cursor:pointer;"></select>
           <div class="notif-btn" id="notif-btn" onclick="showPage('validations')" style="display:none" title="Validations en attente">
             🔔<span class="count" id="notif-count">0</span>
           </div>
@@ -654,6 +655,7 @@ const APP = {
   members:[], sessions:[], payments:[], auditLog:[], users:[], events:[],
   pendingProfiles:{}, pendingPayments:{}, pendingCount:0,
   currentPage:'dashboard', sessionExpiry:null,
+  currentSeason: null,
   memberSearch:'', memberFilterBelt:'', memberFilterStatus:'', memberFilterSeason:'',
   attendanceDate:todayISO(), attendanceType:'Cours régulier',
   attendanceChecked:new Set(),
@@ -926,6 +928,11 @@ async function loadAllData() {
       APP.events = [];
     }
     hideLoader();
+    // Migrate old enrol format to seasons
+    APP.members = APP.members.map(migrateMemberSeasons);
+    // Initialise current season
+    APP.currentSeason = currentSeasonStr();
+    updateSeasonSelector();
   } catch(e) { hideLoader(); showToast('Erreur chargement données: '+e.message,'error'); }
 }
 function updatePendingBadge() {
@@ -1332,6 +1339,95 @@ function checkEligibility(member) {
 // ============================================================
 // DASHBOARD
 // ============================================================
+// ============================================================
+// SEASON MANAGEMENT
+// ============================================================
+function updateSeasonSelector() {
+  const sel = document.getElementById('season-selector');
+  if (!sel) return;
+  const seasons = allSeasons();
+  sel.innerHTML = seasons.map(s => `<option value="${s}" ${s===APP.currentSeason?'selected':''}>${s.replace('-','–')}</option>`).join('');
+}
+
+function onSeasonChange() {
+  APP.currentSeason = document.getElementById('season-selector').value;
+  // Re-render whatever page is active
+  const page = APP.currentPage;
+  if (['inscriptions','membres','paiements'].includes(page)) showPage(page);
+  else if (APP.currentPage === 'accounting') showPage('accounting');
+}
+
+async function createNewSeason() {
+  const seasons = allSeasons();
+  // Calculate next season from the latest existing one
+  const latest = seasons[0]; // e.g. '2025-2026'
+  const latestStart = parseInt(latest.split('-')[0]);
+  const nextStart = latestStart + 1;
+  const nextSeason = `${nextStart}-${nextStart+1}`;
+
+  if (seasons.includes(nextSeason)) {
+    showToast(`La saison ${nextSeason.replace('-','–')} existe déjà.`, 'warn');
+    return;
+  }
+
+  if (!confirm(`Créer la saison ${nextSeason.replace('-','–')} ?\n\nTous les membres actifs seront ajoutés avec une fiche d'inscription vierge.`)) return;
+
+  const blank = { adhesion:false, form:false, medical:false, photo:false, paid:false, licence:false };
+  APP.members.forEach(m => {
+    if (m.status === 'active') {
+      if (!m.seasons) m.seasons = {};
+      if (!m.seasons[nextSeason]) m.seasons[nextSeason] = { ...blank };
+    }
+  });
+
+  await saveMembers();
+  await logAudit('Nouvelle saison créée', nextSeason);
+  APP.currentSeason = nextSeason;
+  updateSeasonSelector();
+  showPage('inscriptions');
+  showToast(`Saison ${nextSeason.replace('-','–')} créée !`, 'ok');
+}
+
+async function moveMemberToSeason(memberId, fromSeason, toSeason) {
+  const m = APP.members.find(x=>x.id===memberId);
+  if (!m || !m.seasons) return;
+  const enrol = m.seasons[fromSeason];
+  if (!enrol) return;
+  if (!confirm(`Déplacer l'inscription de ${m.firstname} ${m.lastname} de ${fromSeason.replace('-','–')} vers ${toSeason.replace('-','–')} ?`)) return;
+  if (!m.seasons[toSeason]) m.seasons[toSeason] = { adhesion:false, form:false, medical:false, photo:false, paid:false, licence:false };
+  // Merge (take the 'true' values)
+  Object.keys(enrol).forEach(k => { if (enrol[k]) m.seasons[toSeason][k] = true; });
+  delete m.seasons[fromSeason];
+  await saveMembers();
+  await logAudit('Inscription déplacée', `${m.firstname} ${m.lastname} : ${fromSeason} → ${toSeason}`);
+  showToast('Inscription déplacée.', 'ok');
+  closeModal();
+}
+
+function renderMemberSeasonsList(member) {
+  if (!member.seasons || !Object.keys(member.seasons).length) return '<p style="color:var(--text3);font-size:13px">Aucune saison enregistrée.</p>';
+  const seasons = allSeasons();
+  const memberSeasons = Object.keys(member.seasons).sort((a,b)=>b.localeCompare(a));
+  return memberSeasons.map(s => {
+    const e = member.seasons[s];
+    const done = ['adhesion','form','medical','photo','paid','licence'].filter(f=>e[f]).length;
+    const otherSeasons = seasons.filter(x=>x!==s);
+    const moveOpts = otherSeasons.map(os=>`<option value="${os}">${os.replace('-','–')}</option>`).join('');
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <span style="font-weight:600;font-size:13px;min-width:80px">${s.replace('-','–')}</span>
+      <span style="font-size:12px;color:var(--text3)">${done}/6 étapes</span>
+      ${done>0?'<span class="badge badge-ok">Inscrit</span>':'<span class="badge badge-pending">Vierge</span>'}
+      ${otherSeasons.length&&APP.role!=='board'?`<div style="display:flex;align-items:center;gap:5px;margin-left:auto">
+        <span style="font-size:12px;color:var(--text3)">Déplacer vers :</span>
+        <select id="move-sel-${member.id}-${s}" style="font-size:12px;padding:3px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--text)">
+          ${moveOpts}
+        </select>
+        <button class="btn btn-sm btn-secondary" onclick="moveMemberToSeason(${member.id},'${s}',document.getElementById('move-sel-${member.id}-${s}').value)">→</button>
+      </div>`:''}
+    </div>`;
+  }).join('');
+}
+
 function renderDashboard() {
   const activeMembers = APP.members.filter(m=>m.status==='active');
   const inactiveMembers = APP.members.filter(m=>m.status==='inactive');
@@ -1349,7 +1445,7 @@ function renderDashboard() {
   // Alerts
   const alerts = [];
   const expiringSoon = activeMembers.filter(m=>{ const s=cotisationStatus(m.id); return s.status==='warn'; });
-  const missingMedical = activeMembers.filter(m=>m.enrol&&!m.enrol.medical);
+  const missingMedical = activeMembers.filter(m=>!getMemberEnrol(m, APP.currentSeason||currentSeasonStr()).medical);
   if (unpaidCot.length) alerts.push({type:'red',icon:'💸',text:`${unpaidCot.length} membre(s) sans cotisation à jour`});
   if (expiringSoon.length) alerts.push({type:'warn',icon:'⏳',text:`${expiringSoon.length} cotisation(s) expirent dans ≤14j`});
   if (missingMedical.length) alerts.push({type:'warn',icon:'🏥',text:`${missingMedical.length} certificat(s) médical(aux) manquant(s)`});
@@ -1473,7 +1569,7 @@ function renderMembers() {
                 <td style="font-size:13px;color:var(--text2)">${esc(m.email||'—')}</td>
                 <td class="mono" style="font-size:12px">${esc(m.fsk||'—')}</td>
                 <td>${fbsk}</td>
-                <td>${enrolDots(m.enrol)}</td>
+                <td>${enrolDots(getMemberEnrol(m, APP.currentSeason||currentSeasonStr()))}</td>
                 <td>${csBadge}</td>
                 <td><span class="badge ${m.status==='active'?'badge-active':'badge-inactive'}">${m.status==='active'?'Actif':'Inactif'}</span></td>
                 ${APP.role!=='board'?`<td><button class="btn btn-sm btn-secondary" onclick="openMemberForm(${m.id})">✏️</button></td>`:''}
@@ -1559,17 +1655,22 @@ function openMemberForm(memberId) {
       </div>
     </div>
     <div class="form-section">
-      <div class="form-section-title">Fiche d'inscription</div>
+      <div class="form-section-title">Fiche d'inscription — Saison ${APP.currentSeason||currentSeasonStr()}</div>
       <div class="form-grid">
         ${['adhesion','form','medical','photo','paid','licence'].map(f=>{
           const lbl={adhesion:'Adhésion',form:'Formulaire',medical:'Certificat médical',photo:'Photo',paid:'Cotisation',licence:'Licence'};
+          const currentEnrol = getMemberEnrol(m||{}, APP.currentSeason||currentSeasonStr());
           return `<div class="form-group" style="flex-direction:row;align-items:center;gap:8px">
-            <input type="checkbox" id="mf-enrol-${f}" ${enrol[f]?'checked':''} style="width:18px;height:18px;accent-color:var(--gold)">
+            <input type="checkbox" id="mf-enrol-${f}" ${currentEnrol[f]?'checked':''} style="width:18px;height:18px;accent-color:var(--gold)">
             <label for="mf-enrol-${f}" style="margin:0;cursor:pointer">${lbl[f]}</label>
           </div>`;
         }).join('')}
       </div>
     </div>
+    ${m?`<div class="form-section">
+      <div class="form-section-title">Saisons</div>
+      ${renderMemberSeasonsList(m)}
+    </div>`:''}
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
       ${m&&APP.role==='admin'?`<button type="button" class="btn btn-danger" onclick="deleteMemberConfirm(${m.id})">🗑 Supprimer</button>`:''}
       <button type="button" class="btn btn-secondary" onclick="closeModal()">Annuler</button>
@@ -1630,22 +1731,28 @@ async function submitMemberForm(e, memberId) {
     wsko:      document.getElementById('mf-wsko').value.trim(),
     fbsk:      document.getElementById('mf-fbsk').value.trim()||null,
     fee:       parseFloat(document.getElementById('mf-fee').value)||null,
-    enrol: {
-      adhesion: document.getElementById('mf-enrol-adhesion').checked,
-      form:     document.getElementById('mf-enrol-form').checked,
-      medical:  document.getElementById('mf-enrol-medical').checked,
-      photo:    document.getElementById('mf-enrol-photo').checked,
-      paid:     document.getElementById('mf-enrol-paid').checked,
-      licence:  document.getElementById('mf-enrol-licence').checked,
-    }
+  };
+  const season = APP.currentSeason || currentSeasonStr();
+  const seasonEnrol = {
+    adhesion: document.getElementById('mf-enrol-adhesion').checked,
+    form:     document.getElementById('mf-enrol-form').checked,
+    medical:  document.getElementById('mf-enrol-medical').checked,
+    photo:    document.getElementById('mf-enrol-photo').checked,
+    paid:     document.getElementById('mf-enrol-paid').checked,
+    licence:  document.getElementById('mf-enrol-licence').checked,
   };
   if (!data.firstname||!data.lastname) return showToast('Prénom et nom requis','error');
-  // Bug fix #7: saveMember does NOT call updateMemberIndex
   if (memberId) {
     const idx = APP.members.findIndex(x=>x.id===memberId);
-    if (idx>=0) APP.members[idx] = {...APP.members[idx],...data};
+    if (idx>=0) {
+      const existing = APP.members[idx];
+      if (!existing.seasons) existing.seasons = {};
+      existing.seasons[season] = seasonEnrol;
+      APP.members[idx] = {...existing,...data, seasons: existing.seasons};
+    }
   } else {
     data.id = nextMemberId();
+    data.seasons = { [season]: seasonEnrol };
     APP.members.push(data);
   }
   await saveMembers();
@@ -1664,12 +1771,32 @@ async function submitMemberForm(e, memberId) {
 // INSCRIPTIONS
 // ============================================================
 function renderInscriptions() {
-  const active = APP.members.filter(m=>m.status==='active').sort((a,b)=>a.lastname.localeCompare(b.lastname));
   const fields = ['adhesion','form','medical','photo','paid','licence'];
   const fLabels = {adhesion:'Adhésion',form:'Formulaire',medical:'Médical',photo:'Photo',paid:'Cotisation',licence:'Licence'};
+  const season = APP.currentSeason || currentSeasonStr();
+  const seasons = allSeasons();
+  const seasonOpts = seasons.map(s=>`<option value="${s}" ${s===season?'selected':''}>${s.replace('-','–')}</option>`).join('');
+
+  // Members enrolled in this season (have a seasons[season] entry)
+  const allActive = APP.members.filter(m=>m.status==='active').sort((a,b)=>a.lastname.localeCompare(b.lastname));
+  const enrolled = allActive.filter(m => m.seasons && m.seasons[season]);
+  const notEnrolled = allActive.filter(m => !m.seasons || !m.seasons[season]);
 
   document.getElementById('content').innerHTML = `
-    <div class="page-header"><h2>📋 Inscriptions</h2></div>
+    <div class="page-header">
+      <h2>📋 Inscriptions</h2>
+      <div class="page-actions">
+        <select onchange="APP.currentSeason=this.value;updateSeasonSelector();renderInscriptions()" style="font-size:13px;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--gold2);font-weight:600">
+          ${seasonOpts}
+        </select>
+        ${APP.role!=='board'?`<button class="btn btn-primary" onclick="createNewSeason()">+ Nouvelle saison</button>`:''}
+      </div>
+    </div>
+    ${notEnrolled.length?`<div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--text2);">
+      ⚠️ <strong>${notEnrolled.length} membre(s)</strong> non inscrit(s) cette saison :
+      ${notEnrolled.map(m=>`<span style="margin:0 4px;color:var(--text3)">${m.firstname} ${m.lastname}</span>`).join('·')}
+      ${APP.role!=='board'?`<button class="btn btn-sm btn-secondary" style="margin-left:8px" onclick="addAllToSeason('${season}')">Inscrire tous</button>`:''}
+    </div>`:''}
     <div class="table-wrap">
       <div class="table-scroll">
         <table>
@@ -1679,35 +1806,50 @@ function renderInscriptions() {
             <th>Progression</th>
           </tr></thead>
           <tbody>
-            ${active.map(m => {
-              const enrol = m.enrol||{};
+            ${enrolled.length ? enrolled.map(m => {
+              const enrol = m.seasons[season] || {};
               const done = fields.filter(f=>enrol[f]).length;
               const pct = Math.round(done/fields.length*100);
               return `<tr>
                 <td><a href="#" onclick="openMemberDetailModal(${m.id});return false" style="color:var(--text);font-weight:500">${esc(m.lastname)} ${esc(m.firstname)}</a></td>
                 <td>${beltBadge(m.belt)}</td>
                 ${fields.map(f=>`<td style="text-align:center">
-                  ${APP.role!=='board'?`<input type="checkbox" ${enrol[f]?'checked':''} style="width:18px;height:18px;accent-color:var(--gold)" onchange="toggleEnrolCheck(${m.id},'${f}',this.checked)">`:`<span>${enrol[f]?'✅':'·'}</span>`}
+                  ${APP.role!=='board'?`<input type="checkbox" ${enrol[f]?'checked':''} style="width:18px;height:18px;accent-color:var(--gold)" onchange="toggleEnrolCheck(${m.id},'${f}',this.checked,'${season}')">`:`<span>${enrol[f]?'✅':'·'}</span>`}
                 </td>`).join('')}
                 <td style="min-width:120px">
                   <div class="progress-bar-wrap"><div class="progress-bar-fill${pct<50?' bad':pct<100?' warn':''}" style="width:${pct}%"></div></div>
                   <div style="font-size:11px;color:var(--text3);margin-top:3px">${done}/${fields.length}</div>
                 </td>
               </tr>`;
-            }).join('')}
+            }).join('') : `<tr><td colspan="${fields.length+3}" style="text-align:center;color:var(--text3);padding:32px">Aucun membre inscrit pour cette saison.</td></tr>`}
           </tbody>
         </table>
       </div>
     </div>`;
 }
 
-async function toggleEnrolCheck(memberId, field, checked) {
+async function addAllToSeason(seasonStr) {
+  const blank = { adhesion:false, form:false, medical:false, photo:false, paid:false, licence:false };
+  let count = 0;
+  APP.members.filter(m=>m.status==='active').forEach(m => {
+    if (!m.seasons) m.seasons = {};
+    if (!m.seasons[seasonStr]) { m.seasons[seasonStr] = {...blank}; count++; }
+  });
+  if (!count) { showToast('Tous les membres sont déjà inscrits.','warn'); return; }
+  await saveMembers();
+  showToast(`${count} membre(s) ajouté(s) à la saison.`,'ok');
+  renderInscriptions();
+}
+
+async function toggleEnrolCheck(memberId, field, checked, seasonStr) {
   const m = APP.members.find(x=>x.id===memberId);
   if (!m) return;
-  if (!m.enrol) m.enrol = {};
-  m.enrol[field] = checked;
+  const season = seasonStr || APP.currentSeason || currentSeasonStr();
+  if (!m.seasons) m.seasons = {};
+  if (!m.seasons[season]) m.seasons[season] = { adhesion:false, form:false, medical:false, photo:false, paid:false, licence:false };
+  m.seasons[season][field] = checked;
   await saveMembers();
-  await logAudit('Mise à jour inscription', `${m.firstname} ${m.lastname} — ${field}: ${checked}`);
+  await logAudit('Mise à jour inscription', `${m.firstname} ${m.lastname} — ${field}: ${checked} (saison ${season})`);
 }
 
 
@@ -2059,7 +2201,6 @@ function switchAccountingTab(tab) {
 }
 
 function getSeason(dateStr) {
-  // Returns season start year. Sept 2025 → Aug 2026 = season 2025
   const iso = String(dateStr).match(/^(\d{4})-(\d{2})/);
   if (!iso) return null;
   const y = parseInt(iso[1]), m = parseInt(iso[2]);
@@ -2068,11 +2209,50 @@ function getSeason(dateStr) {
 
 function getSeasonLabel(y) { return `${y}–${y+1}`; }
 
+function currentSeasonStr() {
+  const now = new Date(), y = now.getFullYear(), m = now.getMonth();
+  const start = m >= 8 ? y : y - 1;
+  return `${start}-${start+1}`;
+}
+
+function allSeasons() {
+  // Collect all seasons that have at least one member enrolled
+  const set = new Set();
+  APP.members.forEach(m => {
+    if (m.seasons) Object.keys(m.seasons).forEach(s => set.add(s));
+    else if (m.joinDate) {
+      const sy = getSeason(m.joinDate);
+      if (sy) set.add(`${sy}-${sy+1}`);
+    }
+  });
+  const cur = currentSeasonStr();
+  set.add(cur);
+  return [...set].sort((a,b) => b.localeCompare(a));
+}
+
 function getAvailableSeasons() {
   const years = [...new Set(APP.payments.map(p => getSeason(p.date)).filter(Boolean))].sort((a,b)=>b-a);
   const now = new Date(); const cur = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear()-1;
   if (!years.includes(cur)) years.unshift(cur);
   return years;
+}
+
+// Get a member's enrolment for a specific season
+function getMemberEnrol(member, seasonStr) {
+  if (member.seasons && member.seasons[seasonStr]) return member.seasons[seasonStr];
+  // Legacy: if no seasons object, treat enrol as current season
+  if (!member.seasons && member.enrol) return member.enrol;
+  return { adhesion:false, form:false, medical:false, photo:false, paid:false, licence:false };
+}
+
+// Migrate old enrol format to seasons
+function migrateMemberSeasons(member) {
+  if (member.enrol && !member.seasons) {
+    const joinSeason = member.joinDate ? getSeason(member.joinDate) : null;
+    const seasonStr = joinSeason ? `${joinSeason}-${joinSeason+1}` : currentSeasonStr();
+    member.seasons = { [seasonStr]: { ...member.enrol } };
+  }
+  return member;
 }
 
 function renderPaiementsTab() {
@@ -2628,7 +2808,7 @@ async function approveProfile(uid) {
       street:profile.street, number:profile.number, addr2:profile.addr2,
       zip:profile.zip, city:profile.city,
       emergencyName:profile.emergencyName, emergencyPhone:profile.emergencyPhone,
-      belt:null, status:'active', joinDate:todayISO(), enrol:{}};
+      belt:null, status:'active', joinDate:todayISO(), seasons:{}};
     APP.members.push(newMember);
     await saveMembers();
     await dbRef(`dojo/roles/${uid}`).update({
