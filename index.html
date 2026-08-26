@@ -654,7 +654,7 @@ const APP = {
   members:[], sessions:[], payments:[], auditLog:[], users:[], events:[],
   pendingProfiles:{}, pendingPayments:{}, pendingCount:0,
   currentPage:'dashboard', sessionExpiry:null,
-  memberSearch:'', memberFilterBelt:'', memberFilterStatus:'',
+  memberSearch:'', memberFilterBelt:'', memberFilterStatus:'', memberFilterSeason:'',
   attendanceDate:todayISO(), attendanceType:'Cours régulier',
   attendanceChecked:new Set(),
   presenceSubTab:'par-membre', presencePeriod:'90',
@@ -1408,7 +1408,24 @@ function renderMembers() {
   }
   if (APP.memberFilterBelt) members = members.filter(m=>m.belt===APP.memberFilterBelt);
   if (APP.memberFilterStatus) members = members.filter(m=>m.status===APP.memberFilterStatus);
+  if (APP.memberFilterSeason !== '') {
+    const sy = parseInt(APP.memberFilterSeason);
+    // Season Sept Y → Aug Y+1: member joined in this season
+    const from = `${sy}-09-01`, to = `${sy+1}-08-31`;
+    members = members.filter(m => m.joinDate && m.joinDate >= from && m.joinDate <= to);
+  }
   members = [...members].sort((a,b)=>(a.lastname||'').localeCompare(b.lastname||''));
+
+  // Build season options from join dates
+  const joinSeasons = [...new Set(APP.members.map(m => {
+    if (!m.joinDate) return null;
+    const iso = m.joinDate.match(/^(\d{4})-(\d{2})/);
+    if (!iso) return null;
+    const y = parseInt(iso[1]), mo = parseInt(iso[2]);
+    return mo >= 9 ? y : y - 1;
+  }).filter(Boolean))].sort((a,b)=>b-a);
+  const seasonOpts = `<option value="">Toutes les saisons</option>`
+    + joinSeasons.map(y=>`<option value="${y}"${APP.memberFilterSeason==y?' selected':''}>${y}–${y+1}</option>`).join('');
 
   document.getElementById('content').innerHTML = `
     <div class="page-header">
@@ -1421,6 +1438,9 @@ function renderMembers() {
     </div>
     <div class="filters-bar">
       <input type="search" placeholder="Rechercher nom, email…" value="${esc(APP.memberSearch)}" oninput="APP.memberSearch=this.value;renderMembers()">
+      <select onchange="APP.memberFilterSeason=this.value;renderMembers()">
+        ${seasonOpts}
+      </select>
       <select onchange="APP.memberFilterBelt=this.value;renderMembers()">
         <option value="">Tous les grades</option>
         ${BELTS.map(b=>`<option value="${b}"${APP.memberFilterBelt===b?' selected':''}>${b}</option>`).join('')}
@@ -1755,7 +1775,7 @@ function renderPresences() {
         </div>
       </div>
       <!-- RIGHT PANEL -->
-      <div class="presence-right">
+      <div>
         <div class="tabs" style="margin-bottom:16px">
           <button class="tab-btn${APP.presenceSubTab==='par-membre'?' active':''}" onclick="switchPresenceTab('par-membre')">📊 Par membre</button>
           <button class="tab-btn${APP.presenceSubTab==='par-mois'?' active':''}" onclick="switchPresenceTab('par-mois')">📅 Par mois</button>
@@ -2038,11 +2058,30 @@ function switchAccountingTab(tab) {
   else c.innerHTML = renderRetardsTab();
 }
 
+function getSeason(dateStr) {
+  // Returns season start year. Sept 2025 → Aug 2026 = season 2025
+  const iso = String(dateStr).match(/^(\d{4})-(\d{2})/);
+  if (!iso) return null;
+  const y = parseInt(iso[1]), m = parseInt(iso[2]);
+  return m >= 9 ? y : y - 1;
+}
+
+function getSeasonLabel(y) { return `${y}–${y+1}`; }
+
+function getAvailableSeasons() {
+  const years = [...new Set(APP.payments.map(p => getSeason(p.date)).filter(Boolean))].sort((a,b)=>b-a);
+  const now = new Date(); const cur = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear()-1;
+  if (!years.includes(cur)) years.unshift(cur);
+  return years;
+}
+
 function renderPaiementsTab() {
   const memberOpts = APP.members.filter(m=>m.status==='active').sort((a,b)=>a.lastname.localeCompare(b.lastname))
     .map(m=>`<option value="${m.id}">${esc(m.lastname)} ${esc(m.firstname)}</option>`).join('');
   const typeOpts = Object.entries(PAYMENT_TYPES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('');
   const payments = APP.payments.slice().sort((a,b)=>b.date.localeCompare(a.date));
+  const seasons = getAvailableSeasons();
+  const seasonOpts = `<option value="">Toutes les saisons</option>`+seasons.map(y=>`<option value="${y}">${getSeasonLabel(y)}</option>`).join('');
 
   return `<div class="accounting-layout">
     <!-- FORM LEFT -->
@@ -2105,12 +2144,16 @@ function renderPaiementsTab() {
     <!-- TABLE RIGHT -->
     <div>
       <div class="table-wrap">
-        <div class="filters-bar" style="padding:12px 12px 0">
-          <input type="search" placeholder="Rechercher…" id="pay-search" oninput="filterPaymentsTable()">
-          <select id="pay-filter-type" onchange="filterPaymentsTable()">
+        <div class="filters-bar" style="padding:12px 12px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <select id="pay-filter-season" onchange="filterPaymentsTable()" style="font-size:13px;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--text);">
+            ${seasonOpts}
+          </select>
+          <select id="pay-filter-type" onchange="filterPaymentsTable()" style="font-size:13px;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--text);">
             <option value="">Tous les types</option>
             ${Object.entries(PAYMENT_TYPES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}
           </select>
+          <input type="search" placeholder="Rechercher…" id="pay-search" oninput="filterPaymentsTable()" style="flex:1;min-width:120px;">
+          <span id="pay-season-total" style="font-size:13px;color:var(--ok);font-weight:600;white-space:nowrap;margin-left:auto;"></span>
         </div>
         <div class="table-scroll" id="payments-table-wrap">
           ${renderPaymentsTable(payments)}
@@ -2143,14 +2186,23 @@ function renderPaymentsTable(payments) {
 function filterPaymentsTable() {
   const q = (document.getElementById('pay-search')?.value||'').toLowerCase();
   const type = document.getElementById('pay-filter-type')?.value||'';
+  const seasonVal = document.getElementById('pay-filter-season')?.value||'';
   let payments = APP.payments.slice().sort((a,b)=>b.date.localeCompare(a.date));
+  if (seasonVal !== '') {
+    const sy = parseInt(seasonVal);
+    payments = payments.filter(p => getSeason(p.date) === sy);
+  }
+  if (type) payments = payments.filter(p=>p.type===type);
   if (q) {
     payments = payments.filter(p=>{
       const m = APP.members.find(x=>x.id===p.memberId);
       return (m?`${m.lastname} ${m.firstname}`.toLowerCase():'').includes(q)||(p.note||'').toLowerCase().includes(q);
     });
   }
-  if (type) payments = payments.filter(p=>p.type===type);
+  // Show total for current filter
+  const total = payments.reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
+  const totalEl = document.getElementById('pay-season-total');
+  if (totalEl) totalEl.textContent = payments.length ? `Total : ${total.toFixed(2)} €` : '';
   const wrap = document.getElementById('payments-table-wrap');
   if (wrap) wrap.innerHTML = renderPaymentsTable(payments);
 }
