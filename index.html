@@ -4529,56 +4529,12 @@ async function checkFirstRun() {
 }
 
 async function init() {
-  // Inject PWA manifest
-  const manifest = {
-    name: 'Dojo Manager',
-    short_name: 'DojoMgr',
-    start_url: '.',
-    display: 'standalone',
-    background_color: '#0f0f14',
-    theme_color: '#d4a820',
-    icons: [
-      { src: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" fill="#0f0f14"/><text y="140" x="20" font-size="120" fill="#d4a820">少</text></svg>`), sizes: '192x192', type: 'image/svg+xml' }
-    ]
-  };
-  const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-  const manifestURL  = URL.createObjectURL(manifestBlob);
-  const ml = document.createElement('link');
-  ml.rel  = 'manifest';
-  ml.href = manifestURL;
-  document.head.appendChild(ml);
-
-  // Register service worker (inline)
+  // Unregister any existing service workers (they can cause stale cache issues)
   if ('serviceWorker' in navigator) {
-    const swCode = `
-const CACHE = 'dojo-v29';
-self.addEventListener('install', e => { e.waitUntil(self.skipWaiting()); });
-self.addEventListener('activate', e => e.waitUntil(
-  caches.keys().then(keys => Promise.all(
-    keys.filter(k => k !== CACHE).map(k => caches.delete(k))
-  )).then(() => self.clients.claim().then(() => {
-    self.clients.matchAll().then(clients => clients.forEach(c => c.postMessage({type:'UPDATE'})));
-  }))
-));
-self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
-  // Network-first for HTML (always get latest app)
-  if (e.request.destination === 'document' || e.request.url.endsWith('.html')) {
-    e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
-    return;
-  }
-  // Cache-first for CDN assets (Firebase, CryptoJS, etc.)
-  e.respondWith(
-    caches.open(CACHE).then(c =>
-      c.match(e.request).then(r => r || fetch(e.request).then(res => {
-        c.put(e.request, res.clone()); return res;
-      }))
-    )
-  );
-});`;
-    const swBlob = new Blob([swCode], { type: 'application/javascript' });
-    const swURL  = URL.createObjectURL(swBlob);
-    try { await navigator.serviceWorker.register(swURL); } catch(_) {}
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const reg of regs) await reg.unregister();
+    } catch(_) {}
   }
 
   // Init Firebase
