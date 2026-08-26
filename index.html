@@ -932,7 +932,6 @@ async function loadAllData() {
     APP.members = APP.members.map(migrateMemberSeasons);
     // Initialise current season
     APP.currentSeason = currentSeasonStr();
-    updateSeasonSelector();
   } catch(e) { hideLoader(); showToast('Erreur chargement données: '+e.message,'error'); }
 }
 function updatePendingBadge() {
@@ -1258,6 +1257,7 @@ function showAdminApp() {
   if (notifBtn) notifBtn.style.display = (APP.role==='admin' && APP.pendingCount>0)?'flex':'none';
 
   showPage('dashboard');
+  updateSeasonSelector();
 }
 
 function showMemberPortal(roleData) {
