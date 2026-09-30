@@ -487,6 +487,9 @@ h3{font-size:15px;font-weight:600}
         <div class="nav-item" onclick="showPage('comptabilite')" id="nav-comptabilite">
           <span class="icon">💶</span>Comptabilité
         </div>
+        <div class="nav-item" onclick="showPage('vue-annuelle')" id="nav-vue-annuelle">
+          <span class="icon">📊</span>Vue annuelle
+        </div>
         <div class="nav-item" onclick="showPage('evenements')" id="nav-evenements">
           <span>🗓</span><span>Événements</span>
         </div>
@@ -533,6 +536,13 @@ h3{font-size:15px;font-weight:600}
             🔔<span class="count" id="notif-count">0</span>
           </div>
         </div>
+      </div>
+      <div id="monthly-banner" style="display:none;background:#1a3a1a;border-bottom:2px solid var(--ok);padding:10px 20px;display:none;align-items:center;gap:12px;">
+        <span style="font-size:18px">📋</span>
+        <span style="flex:1;font-size:13px;color:#a0e0a0;" id="monthly-banner-msg"></span>
+        <button class="btn btn-sm" style="background:var(--ok);color:#fff;flex-shrink:0" onclick="downloadMonthlySheet()">⬇ Télécharger</button>
+        <button class="btn btn-sm btn-secondary" style="flex-shrink:0" onclick="dismissMonthlyBanner()">Plus tard</button>
+        <button class="btn btn-sm btn-secondary" style="flex-shrink:0" onclick="markMonthlyExportDone()">✔ Fait</button>
       </div>
       <div id="content"></div>
     </div>
@@ -589,6 +599,7 @@ h3{font-size:15px;font-weight:600}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 <!-- SheetJS XLSX -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
 // ============================================================
@@ -854,8 +865,8 @@ function showPage(page) {
   const renders = {
     dashboard:renderDashboard, membres:renderMembers, inscriptions:renderInscriptions,
     presences:renderPresences, examens:renderExamens, comptabilite:renderComptabilite,
-    evenements:renderEvenements, obligations:renderObligations, utilisateurs:renderUtilisateurs,
-    validations:renderValidations, journal:renderJournal, donnees:renderDonnees
+    'vue-annuelle':renderVueAnnuelle, evenements:renderEvenements, obligations:renderObligations,
+    utilisateurs:renderUtilisateurs, validations:renderValidations, journal:renderJournal, donnees:renderDonnees
   };
   if (renders[page]) renders[page]();
 }
@@ -1275,6 +1286,7 @@ function showAdminApp() {
 
   showPage('dashboard');
   updateSeasonSelector();
+  checkMonthlyExportBanner();
 }
 
 function showMemberPortal(roleData) {
@@ -1488,6 +1500,477 @@ function renderMemberSeasonsList(member) {
   }).join('');
 
   return addBlock + rows;
+}
+
+// ============================================================
+// VUE ANNUELLE
+// ============================================================
+const SEASON_MONTHS = [
+  {n:9,  l:'Septembre', s:'Sep'},
+  {n:10, l:'Octobre',   s:'Oct'},
+  {n:11, l:'Novembre',  s:'Nov'},
+  {n:12, l:'Décembre',  s:'Déc'},
+  {n:1,  l:'Janvier',   s:'Jan'},
+  {n:2,  l:'Février',   s:'Fév'},
+  {n:3,  l:'Mars',      s:'Mar'},
+  {n:4,  l:'Avril',     s:'Avr'},
+  {n:5,  l:'Mai',       s:'Mai'},
+  {n:6,  l:'Juin',      s:'Jun'},
+  {n:7,  l:'Juillet',   s:'Jul'},
+  {n:8,  l:'Août',      s:'Aoû'},
+];
+
+function getMonthKey(season, monthNum) {
+  const sy = parseInt(season.split('-')[0]);
+  const year = monthNum >= 9 ? sy : sy + 1;
+  return year + '-' + String(monthNum).padStart(2, '0');
+}
+
+function buildYearlyData(season) {
+  const members = APP.members
+    .filter(function(m) { return m.seasons && m.seasons[season]; })
+    .sort(function(a,b) { return (a.lastname||'').localeCompare(b.lastname||''); });
+
+  const rows = members.map(function(m) {
+    const enrol = m.seasons[season] || {};
+    const monthData = SEASON_MONTHS.map(function(mo) {
+      const key = getMonthKey(season, mo.n);
+      const presences = APP.sessions.filter(function(s) {
+        return s.date && s.date.startsWith(key) && s.present && s.present.includes(m.id);
+      }).length;
+      const cotisation = APP.payments
+        .filter(function(p) { return p.memberId===m.id && p.date && p.date.startsWith(key) && COTISATION_TYPES.includes(p.type); })
+        .reduce(function(sum,p) { return sum+(parseFloat(p.amount)||0); }, 0);
+      return {presences:presences, cotisation:cotisation};
+    });
+    const adhesion = APP.payments
+      .filter(function(p) { return p.memberId===m.id && p.type==='adhesion'; })
+      .reduce(function(sum,p) { return sum+(parseFloat(p.amount)||0); }, 0);
+    const totals = [
+      monthData.slice(0,4).reduce(function(s,d){return s+d.presences;},0),
+      monthData.slice(4,7).reduce(function(s,d){return s+d.presences;},0),
+      monthData.slice(7,10).reduce(function(s,d){return s+d.presences;},0),
+      monthData.slice(10,12).reduce(function(s,d){return s+d.presences;},0),
+    ];
+    return {id:m.id, lastname:m.lastname||'', firstname:m.firstname||'',
+      licenceDemande:!!enrol.licence, medical:!!enrol.medical,
+      adhesion:adhesion, months:monthData, totals:totals};
+  });
+  return {season:season, rows:rows};
+}
+
+function renderVueAnnuelle() {
+  const season = APP.currentSeason || currentSeasonStr();
+  const seasons = allSeasons();
+  const seasonOpts = seasons.map(function(s) {
+    return '<option value="'+s+'"'+(s===season?' selected':'')+'>'+s.replace('-','–')+'</option>';
+  }).join('');
+  const data = buildYearlyData(season);
+  const cS = 'border:1px solid #ccc;padding:3px 5px;font-size:11px;text-align:center;white-space:nowrap;';
+  const hS = 'background:#bdd7ee;padding:3px 5px;border:1px solid #4472c4;font-size:10px;font-weight:700;writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;text-align:center;';
+  const mH = 'background:#9dc3e6;padding:2px 3px;border:1px solid #4472c4;font-size:10px;font-weight:700;text-align:center;';
+  const tH = 'background:#a9d18e;padding:3px 5px;border:1px solid #385723;font-size:10px;font-weight:700;writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;text-align:center;';
+  const tC = 'background:#e2efda;border:1px solid #385723;padding:3px 5px;font-size:11px;text-align:center;font-weight:600;';
+  const TR = 'background:#dae3f3;border:1px solid #4472c4;padding:3px 5px;font-size:11px;text-align:center;font-weight:700;';
+  const BL = '2px solid #4472c4';
+  const TRIM_L = ['Sept.–Déc.','Jan.–Mar.','Avr.–Jun.','Jul.–Aoû.'];
+
+  // compute totals
+  const colTots = SEASON_MONTHS.map(function(_,i) {
+    return {
+      cot: data.rows.reduce(function(s,r){return s+r.months[i].cotisation;},0),
+      pre: data.rows.reduce(function(s,r){return s+r.months[i].presences;},0)
+    };
+  });
+  const trimTots = [0,1,2,3].map(function(t) {
+    return data.rows.reduce(function(s,r){return s+r.totals[t];},0);
+  });
+  const totAdh = data.rows.reduce(function(s,r){return s+r.adhesion;},0);
+
+  let tbl = '<table style="border-collapse:collapse;min-width:max-content">';
+  // Header row 1
+  tbl += '<thead><tr>';
+  tbl += '<th rowspan="2" style="'+hS+';min-width:90px">Nom</th>';
+  tbl += '<th rowspan="2" style="'+hS+';min-width:70px">Prénom</th>';
+  tbl += '<th rowspan="2" style="'+hS+';width:55px">Demande de licence</th>';
+  tbl += '<th rowspan="2" style="'+hS+';width:55px">Certificat médical</th>';
+  tbl += '<th rowspan="2" style="'+hS+';width:55px">Adhésion (45 €)</th>';
+  SEASON_MONTHS.forEach(function(mo, i) {
+    var bl = (i===0||i===4||i===7||i===10)?BL:'1px solid #ccc';
+    tbl += '<th colspan="2" style="'+mH+';border-left:'+bl+'">'+mo.l+'</th>';
+  });
+  TRIM_L.forEach(function(t) { tbl += '<th rowspan="2" style="'+tH+'">'+t+'</th>'; });
+  tbl += '</tr><tr>';
+  SEASON_MONTHS.forEach(function(mo, i) {
+    var bl = (i===0||i===4||i===7||i===10)?BL:'1px solid #ccc';
+    tbl += '<th style="'+hS+';border-left:'+bl+'">Cotisation (€)</th>';
+    tbl += '<th style="'+hS+'">Présences</th>';
+  });
+  tbl += '</tr></thead><tbody>';
+
+  data.rows.forEach(function(r) {
+    const canEdit = APP.role !== 'board';
+    tbl += '<tr>';
+    tbl += '<td style="'+cS+';text-align:left;font-weight:500">'+esc(r.lastname)+'</td>';
+    tbl += '<td style="'+cS+';text-align:left">'+esc(r.firstname)+'</td>';
+    var licBg = r.licenceDemande?'background:#c6e0b4;':'';
+    var medBg = r.medical?'background:#c6e0b4;':'';
+    tbl += '<td style="'+cS+';'+licBg+'">'+(canEdit?'<button style="font-size:10px;padding:1px 5px;cursor:pointer;background:'+(r.licenceDemande?'#a9d18e':'#f2f2f2')+';border:1px solid #888;border-radius:3px" onclick="toggleLicenceDemande('+r.id+',\''+season+'\')">'+(r.licenceDemande?'Oui':'Non')+'</button>':(r.licenceDemande?'Oui':'Non'))+'</td>';
+    tbl += '<td style="'+cS+';'+medBg+'">'+(r.medical?'Oui':'Non')+'</td>';
+    tbl += '<td style="'+cS+'">'+(r.adhesion>0?Math.round(r.adhesion)+' €':'')+'</td>';
+    r.months.forEach(function(mo, i) {
+      var bl = (i===0||i===4||i===7||i===10)?BL:'1px solid #ccc';
+      tbl += '<td style="'+cS+';border-left:'+bl+'">'+(mo.cotisation>0?Math.round(mo.cotisation)+' €':'')+'</td>';
+      tbl += '<td style="'+cS+'">'+(mo.presences>0?mo.presences:'')+'</td>';
+    });
+    r.totals.forEach(function(t) { tbl += '<td style="'+tC+'">'+(t>0?t:'')+'</td>'; });
+    tbl += '</tr>';
+  });
+  // TOTAL row
+  tbl += '<tr>';
+  tbl += '<td colspan="2" style="'+TR+';text-align:center">TOTAL</td>';
+  tbl += '<td style="'+TR+'">'+data.rows.filter(function(r){return r.licenceDemande;}).length+' oui</td>';
+  tbl += '<td style="'+TR+'">'+data.rows.filter(function(r){return r.medical;}).length+' oui</td>';
+  tbl += '<td style="'+TR+'">'+(totAdh>0?Math.round(totAdh)+' €':0)+'</td>';
+  colTots.forEach(function(t, i) {
+    var bl = (i===0||i===4||i===7||i===10)?BL:'1px solid #ccc';
+    tbl += '<td style="'+TR+';border-left:'+bl+'">'+(t.cot>0?Math.round(t.cot)+' €':0)+'</td>';
+    tbl += '<td style="'+TR+'">'+t.pre+'</td>';
+  });
+  trimTots.forEach(function(t) { tbl += '<td style="'+TR+';background:#c6e0b4">'+t+'</td>'; });
+  tbl += '</tr></tbody></table>';
+
+  document.getElementById('content').innerHTML =
+    '<div class="page-header"><h2>📊 Vue annuelle</h2>'
+    +'<div class="page-actions">'
+    +'<select onchange="APP.currentSeason=this.value;updateSeasonSelector();renderVueAnnuelle()" style="font-size:13px;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--gold2);font-weight:600">'+seasonOpts+'</select>'
+    +(APP.role!=='board'?'<button class="btn btn-secondary" onclick="downloadYearlyPDF(\''+season+'\')">⬇ PDF</button>':'')
+    +(APP.role!=='board'?'<button class="btn btn-primary" onclick="downloadYearlyODS(\''+season+'\')">⬇ ODS</button>':'')
+    +'</div></div>'
+    +'<div style="overflow-x:auto;margin:-4px">'+tbl+'</div>';
+}
+
+async function toggleLicenceDemande(memberId, season) {
+  const m = APP.members.find(function(x){return x.id===memberId;});
+  if (!m||!m.seasons||!m.seasons[season]) return;
+  m.seasons[season].licence = !m.seasons[season].licence;
+  await saveMembers();
+  renderVueAnnuelle();
+}
+
+// ── ODS Export ──────────────────────────────────────────────
+async function downloadYearlyODS(season) {
+  const data = buildYearlyData(season);
+  const [sy] = season.split('-').map(Number);
+  const label = season.replace('-','–');
+  const TRIM_L = ['Sept.–Déc.','Jan.–Mars','Avr.–Juin','Jul.–Août'];
+
+  // Build ODS XML
+  const ns = 'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+    +'xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" '
+    +'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" '
+    +'xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" '
+    +'xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" '
+    +'xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0"';
+
+  function cellStyle(name, bg, border, rotate, bold, fontSize) {
+    var r = '<style:style style:name="'+name+'" style:family="table-cell">';
+    r += '<style:table-cell-properties fo:background-color="'+(bg||'transparent')+'" '
+      +'fo:border="'+(border||'0.5pt solid #cccccc')+'" '
+      +(rotate?'style:rotation-angle="'+rotate+'" style:rotation-align="bottom" ':'')
+      +'/>';
+    r += '<style:text-properties fo:font-size="'+(fontSize||'9pt')+'" '
+      +(bold?'fo:font-weight="bold" ':'')+'/>';
+    r += '</style:style>';
+    return r;
+  }
+
+  var styles = ''
+    + cellStyle('ce-default','#ffffff','0.5pt solid #cccccc',0,false,'9pt')
+    + cellStyle('ce-header-rot','#bdd7ee','0.5pt solid #4472c4',45,true,'8pt')
+    + cellStyle('ce-month-top','#9dc3e6','0.5pt solid #4472c4',0,true,'9pt')
+    + cellStyle('ce-trim','#a9d18e','0.5pt solid #385723',45,true,'8pt')
+    + cellStyle('ce-tot-cell','#e2efda','0.5pt solid #385723',0,true,'9pt')
+    + cellStyle('ce-total-row','#dae3f3','0.5pt solid #4472c4',0,true,'9pt')
+    + cellStyle('ce-total-trim','#c6e0b4','0.5pt solid #385723',0,true,'9pt')
+    + cellStyle('ce-month-border','#bdd7ee','0.5pt solid #cccccc;fo:border-left:2pt solid #4472c4',45,true,'8pt')
+    + cellStyle('ce-data-border','#ffffff','0.5pt solid #cccccc;fo:border-left:2pt solid #4472c4',0,false,'9pt')
+    + cellStyle('ce-yes','#c6e0b4','0.5pt solid #cccccc',0,false,'9pt')
+    + cellStyle('ce-name','#ffffff','0.5pt solid #cccccc',0,true,'9pt');
+
+  function cell(style, val, type) {
+    type = type || 'string';
+    var v = val===null||val===undefined?'':String(val);
+    if (type==='float'&&v!=='') {
+      return '<table:table-cell table:style-name="'+style+'" office:value-type="float" office:value="'+v+'"><text:p>'+v+(v?'':0)+'</text:p></table:table-cell>';
+    }
+    return '<table:table-cell table:style-name="'+style+'"><text:p>'+v+'</text:p></table:table-cell>';
+  }
+  function emptyCell(style, n) {
+    var r=''; for(var i=0;i<(n||1);i++) r+='<table:table-cell table:style-name="'+(style||'ce-default')+'"/>';
+    return r;
+  }
+  function spannedCell(style, val, cols, rows) {
+    return '<table:table-cell table:style-name="'+style+'" table:number-columns-spanned="'+(cols||1)+'" table:number-rows-spanned="'+(rows||1)+'"><text:p>'+(val||'')+'</text:p></table:table-cell>'
+      +(cols>1?'<table:covered-table-cell table:number-columns-repeated="'+(cols-1)+'"/>':'');
+  }
+
+  var isMonthBorder = function(i){return i===0||i===4||i===7||i===10;};
+
+  // Build rows
+  var headerRow1 = '<table:table-row table:style-name="ro-h">';
+  headerRow1 += spannedCell('ce-header-rot','Nom',1,2);
+  headerRow1 += spannedCell('ce-header-rot','Prénom',1,2);
+  headerRow1 += spannedCell('ce-header-rot','Demande de licence',1,2);
+  headerRow1 += spannedCell('ce-header-rot','Certificat médical',1,2);
+  headerRow1 += spannedCell('ce-header-rot','Adhésion (45 €)',1,2);
+  SEASON_MONTHS.forEach(function(mo,i) {
+    var s = isMonthBorder(i)?'ce-month-top':'ce-month-top'; // same style, border handled in col def
+    headerRow1 += spannedCell(s,mo.l,2,1)+'<table:covered-table-cell/>';
+  });
+  TRIM_L.forEach(function(t) { headerRow1 += spannedCell('ce-trim',t,1,2); });
+  headerRow1 += '</table:table-row>';
+
+  var headerRow2 = '<table:table-row table:style-name="ro-h">';
+  // first 5 cells covered
+  for(var i=0;i<5;i++) headerRow2 += '<table:covered-table-cell/>';
+  SEASON_MONTHS.forEach(function(mo,i) {
+    var s = isMonthBorder(i)?'ce-month-border':'ce-header-rot';
+    headerRow2 += cell(s,'Cotisation (€)');
+    headerRow2 += cell('ce-header-rot','Présences');
+  });
+  // trim cells covered
+  for(var i=0;i<4;i++) headerRow2 += '<table:covered-table-cell/>';
+  headerRow2 += '</table:table-row>';
+
+  var dataRows = data.rows.map(function(r) {
+    var row = '<table:table-row>';
+    row += cell('ce-name', r.lastname);
+    row += cell('ce-default', r.firstname);
+    row += cell(r.licenceDemande?'ce-yes':'ce-default', r.licenceDemande?'Oui':'Non');
+    row += cell(r.medical?'ce-yes':'ce-default', r.medical?'Oui':'Non');
+    row += cell('ce-default', r.adhesion>0?Math.round(r.adhesion)+' €':'');
+    r.months.forEach(function(mo,i) {
+      var s = isMonthBorder(i)?'ce-data-border':'ce-default';
+      row += cell(s, mo.cotisation>0?Math.round(mo.cotisation)+' €':'');
+      row += cell('ce-default', mo.presences>0?mo.presences:'');
+    });
+    r.totals.forEach(function(t) { row += cell('ce-tot-cell', t>0?t:''); });
+    row += '</table:table-row>';
+    return row;
+  }).join('');
+
+  // Totals row
+  var colTots = SEASON_MONTHS.map(function(_,i) {
+    return {
+      cot: data.rows.reduce(function(s,r){return s+r.months[i].cotisation;},0),
+      pre: data.rows.reduce(function(s,r){return s+r.months[i].presences;},0)
+    };
+  });
+  var trimTots = [0,1,2,3].map(function(t){return data.rows.reduce(function(s,r){return s+r.totals[t];},0);});
+  var totAdh = data.rows.reduce(function(s,r){return s+r.adhesion;},0);
+
+  var totalRow = '<table:table-row>';
+  totalRow += spannedCell('ce-total-row','TOTAL',2,1)+'<table:covered-table-cell/>';
+  totalRow += cell('ce-total-row', data.rows.filter(function(r){return r.licenceDemande;}).length+' oui');
+  totalRow += cell('ce-total-row', data.rows.filter(function(r){return r.medical;}).length+' oui');
+  totalRow += cell('ce-total-row', totAdh>0?Math.round(totAdh)+' €':0);
+  colTots.forEach(function(t,i) {
+    var s = isMonthBorder(i)?'ce-total-row':'ce-total-row';
+    totalRow += cell(s, t.cot>0?Math.round(t.cot)+' €':0);
+    totalRow += cell('ce-total-row', t.pre);
+  });
+  trimTots.forEach(function(t) { totalRow += cell('ce-total-trim',t); });
+  totalRow += '</table:table-row>';
+
+  // Column widths
+  var colDefs = '<table:table-column table:style-name="co-name" table:number-columns-repeated="2"/>'
+    +'<table:table-column table:style-name="co-flag" table:number-columns-repeated="3"/>';
+  SEASON_MONTHS.forEach(function(){
+    colDefs += '<table:table-column table:style-name="co-data" table:number-columns-repeated="2"/>';
+  });
+  colDefs += '<table:table-column table:style-name="co-trim" table:number-columns-repeated="4"/>';
+
+  var contentXml = '<?xml version="1.0" encoding="UTF-8"?>'
+    +'<office:document-content office:version="1.2" '+ns+'>'
+    +'<office:automatic-styles>'
+    +'<style:style style:name="ro-h" style:family="table-row"><style:table-row-properties style:row-height="3.2cm" fo:break-before="auto" style:use-optimal-row-height="false"/></style:style>'
+    +'<style:style style:name="co-name" style:family="table-column"><style:table-column-properties style:column-width="2.8cm"/></style:style>'
+    +'<style:style style:name="co-flag" style:family="table-column"><style:table-column-properties style:column-width="1.4cm"/></style:style>'
+    +'<style:style style:name="co-data" style:family="table-column"><style:table-column-properties style:column-width="1.3cm"/></style:style>'
+    +'<style:style style:name="co-trim" style:family="table-column"><style:table-column-properties style:column-width="1.5cm"/></style:style>'
+    + styles
+    +'</office:automatic-styles>'
+    +'<office:body><office:spreadsheet>'
+    +'<table:table table:name="Saison '+label+'">'
+    + colDefs + headerRow1 + headerRow2 + dataRows + totalRow
+    +'</table:table>'
+    +'</office:spreadsheet></office:body>'
+    +'</office:document-content>';
+
+  var manifestXml = '<?xml version="1.0" encoding="UTF-8"?>'
+    +'<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">'
+    +'<manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/>'
+    +'<manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>'
+    +'</manifest:manifest>';
+
+  var metaXml = '<?xml version="1.0" encoding="UTF-8"?>'
+    +'<office:document-meta '+ns+'><office:meta>'
+    +'<meta:creation-date xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0">'+new Date().toISOString()+'</meta:creation-date>'
+    +'</office:meta></office:document-meta>';
+
+  try {
+    var zip = new JSZip();
+    zip.file('mimetype', 'application/vnd.oasis.opendocument.spreadsheet', {compression:'STORE'});
+    zip.file('content.xml', contentXml);
+    zip.file('META-INF/manifest.xml', manifestXml);
+    zip.file('meta.xml', metaXml);
+    var blob = await zip.generateAsync({type:'blob', mimeType:'application/vnd.oasis.opendocument.spreadsheet'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'vue-annuelle-'+season+'.ods';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    // Mark monthly export done
+    await markMonthlyExportDone();
+    showToast('Fichier ODS téléchargé.', 'ok');
+  } catch(e) {
+    showToast('Erreur ODS : '+e.message, 'error');
+  }
+}
+
+// ── PDF Export ──────────────────────────────────────────────
+function downloadYearlyPDF(season) {
+  const data = buildYearlyData(season);
+  const label = season.replace('-','–');
+  const TRIM_L = ['Sept.–Déc.','Jan.–Mar.','Avr.–Juin','Jul.–Août'];
+
+  var colTots = SEASON_MONTHS.map(function(_,i) {
+    return {
+      cot: data.rows.reduce(function(s,r){return s+r.months[i].cotisation;},0),
+      pre: data.rows.reduce(function(s,r){return s+r.months[i].presences;},0)
+    };
+  });
+  var trimTots = [0,1,2,3].map(function(t){return data.rows.reduce(function(s,r){return s+r.totals[t];},0);});
+  var totAdh = data.rows.reduce(function(s,r){return s+r.adhesion;},0);
+
+  var isB = function(i){return i===0||i===4||i===7||i===10;};
+  var thS = 'background:#bdd7ee;border:1px solid #4472c4;font-size:7pt;font-weight:bold;writing-mode:vertical-rl;transform:rotate(180deg);padding:3px 2px;text-align:center;';
+  var mS = 'background:#9dc3e6;border:1px solid #4472c4;font-size:7pt;font-weight:bold;text-align:center;padding:2px;';
+  var trS = 'background:#a9d18e;border:1px solid #385723;font-size:7pt;font-weight:bold;writing-mode:vertical-rl;transform:rotate(180deg);padding:3px 2px;text-align:center;';
+  var cS = 'border:1px solid #ccc;font-size:7pt;text-align:center;padding:2px 3px;';
+  var tcS = 'background:#e2efda;border:1px solid #385723;font-size:7pt;text-align:center;font-weight:bold;padding:2px 3px;';
+  var trRowS = 'background:#dae3f3;border:1px solid #4472c4;font-size:7pt;text-align:center;font-weight:bold;padding:2px 3px;';
+  var trTrS = 'background:#c6e0b4;border:1px solid #385723;font-size:7pt;text-align:center;font-weight:bold;padding:2px 3px;';
+
+  var tbl = '<table style="border-collapse:collapse;width:100%">';
+  tbl += '<thead><tr>';
+  tbl += '<th rowspan="2" style="'+thS+';min-width:65px;max-width:65px">Nom</th>';
+  tbl += '<th rowspan="2" style="'+thS+';min-width:50px;max-width:50px">Prénom</th>';
+  tbl += '<th rowspan="2" style="'+thS+';width:28px">Licence</th>';
+  tbl += '<th rowspan="2" style="'+thS+';width:28px">Médical</th>';
+  tbl += '<th rowspan="2" style="'+thS+';width:28px">Adhésion</th>';
+  SEASON_MONTHS.forEach(function(mo,i) {
+    var bl = isB(i)?'border-left:2px solid #4472c4;':'';
+    tbl += '<th colspan="2" style="'+mS+bl+'">'+mo.s+'</th>';
+  });
+  TRIM_L.forEach(function(t){ tbl += '<th rowspan="2" style="'+trS+'">'+t+'</th>'; });
+  tbl += '</tr><tr>';
+  for(var i=0;i<5;i++) tbl += '<th style="display:none"></th>';
+  SEASON_MONTHS.forEach(function(mo,i) {
+    var bl = isB(i)?'border-left:2px solid #4472c4;':'';
+    tbl += '<th style="'+thS+bl+'">Cot.</th><th style="'+thS+'">Prés.</th>';
+  });
+  for(var i=0;i<4;i++) tbl += '<th style="display:none"></th>';
+  tbl += '</tr></thead><tbody>';
+
+  data.rows.forEach(function(r) {
+    tbl += '<tr>';
+    tbl += '<td style="'+cS+';text-align:left;font-weight:bold">'+esc(r.lastname)+'</td>';
+    tbl += '<td style="'+cS+';text-align:left">'+esc(r.firstname)+'</td>';
+    tbl += '<td style="'+cS+(r.licenceDemande?';background:#c6e0b4':'')+'">'+( r.licenceDemande?'Oui':'Non')+'</td>';
+    tbl += '<td style="'+cS+(r.medical?';background:#c6e0b4':'')+'">'+( r.medical?'Oui':'Non')+'</td>';
+    tbl += '<td style="'+cS+'">'+( r.adhesion>0?Math.round(r.adhesion)+' €':'')+'</td>';
+    r.months.forEach(function(mo,i) {
+      var bl = isB(i)?'border-left:2px solid #4472c4;':'';
+      tbl += '<td style="'+cS+bl+'">'+( mo.cotisation>0?Math.round(mo.cotisation)+' €':'')+'</td>';
+      tbl += '<td style="'+cS+'">'+( mo.presences>0?mo.presences:'')+'</td>';
+    });
+    r.totals.forEach(function(t){ tbl += '<td style="'+tcS+'">'+( t>0?t:'')+'</td>'; });
+    tbl += '</tr>';
+  });
+  tbl += '<tr>';
+  tbl += '<td colspan="2" style="'+trRowS+';text-align:center">TOTAL</td>';
+  tbl += '<td style="'+trRowS+'">'+data.rows.filter(function(r){return r.licenceDemande;}).length+' oui</td>';
+  tbl += '<td style="'+trRowS+'">'+data.rows.filter(function(r){return r.medical;}).length+' oui</td>';
+  tbl += '<td style="'+trRowS+'">'+( totAdh>0?Math.round(totAdh)+' €':0)+'</td>';
+  colTots.forEach(function(t,i){
+    var bl = isB(i)?'border-left:2px solid #4472c4;':'';
+    tbl += '<td style="'+trRowS+bl+'">'+( t.cot>0?Math.round(t.cot)+' €':0)+'</td>';
+    tbl += '<td style="'+trRowS+'">'+t.pre+'</td>';
+  });
+  trimTots.forEach(function(t){ tbl += '<td style="'+trTrS+'">'+t+'</td>'; });
+  tbl += '</tr></tbody></table>';
+
+  var w = window.open('','_blank');
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8">'
+    +'<title>Vue annuelle '+label+'</title>'
+    +'<style>@page{size:A3 landscape;margin:10mm}body{font-family:Arial,sans-serif;margin:0}h2{font-size:12pt;margin:0 0 6px}@media print{.no-print{display:none}}</style>'
+    +'</head><body>'
+    +'<h2>Shorinji Kempo Bruxelles — Vue annuelle '+label+'</h2>'
+    +tbl
+    +'<div class="no-print" style="margin-top:14px;text-align:center">'
+    +'<button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer">🖨 Imprimer / Enregistrer en PDF</button>'
+    +'</div></body></html>');
+  w.document.close();
+}
+
+// ── Monthly banner ──────────────────────────────────────────
+async function checkMonthlyExportBanner() {
+  if (APP.role === 'board' || APP.role === 'member') return;
+  try {
+    const now = new Date();
+    // Only show from the 2nd of the month to avoid edge cases
+    if (now.getDate() < 2) return;
+    const snap = await dbRef('dojo/last_monthly_export').get();
+    const last = snap.val();
+    // Determine previous month
+    const prevMonth = new Date(now.getFullYear(), now.getMonth()-1, 1);
+    const prevKey = prevMonth.getFullYear()+'-'+String(prevMonth.getMonth()+1).padStart(2,'0');
+    // If no export or export was before this month
+    if (!last || last < prevKey+'-99') {
+      const MONTHS_FR = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+      const mLabel = MONTHS_FR[prevMonth.getMonth()]+' '+prevMonth.getFullYear();
+      const banner = document.getElementById('monthly-banner');
+      const msg = document.getElementById('monthly-banner-msg');
+      if (banner && msg) {
+        msg.textContent = 'Le tableau de présences et cotisations de '+mLabel+' n\'a pas encore été téléchargé.';
+        banner.style.display = 'flex';
+      }
+    }
+  } catch(e) {}
+}
+
+function dismissMonthlyBanner() {
+  const b = document.getElementById('monthly-banner');
+  if (b) b.style.display = 'none';
+}
+
+async function markMonthlyExportDone() {
+  try {
+    const now = new Date();
+    const key = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
+    await dbRef('dojo/last_monthly_export').set(key);
+    dismissMonthlyBanner();
+  } catch(e) {}
+}
+
+async function downloadMonthlySheet() {
+  const now = new Date();
+  const prevMonth = new Date(now.getFullYear(), now.getMonth()-1, 1);
+  const sy = prevMonth.getMonth()>=8?prevMonth.getFullYear():prevMonth.getFullYear()-1;
+  const season = sy+'-'+(sy+1);
+  await downloadYearlyODS(season);
 }
 
 function renderDashboard() {
@@ -1730,7 +2213,7 @@ function openMemberForm(memberId) {
       ${renderMemberSeasonsList(m)}
     </div>`:''}
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
-      ${m&&APP.role==='admin'?`<button type="button" class="btn btn-danger" onclick="deleteMemberConfirm(${m.id})">🗑 Supprimer</button>`:''}
+      ${m&&(APP.role==='admin'||APP.role==='gestionnaire')?`<button type="button" class="btn btn-danger" onclick="deleteMemberConfirm(${m.id})">🗑 Supprimer</button>`:''}
       <button type="button" class="btn btn-secondary" onclick="closeModal()">Annuler</button>
       <button type="submit" class="btn btn-primary">💾 Enregistrer</button>
     </div>
