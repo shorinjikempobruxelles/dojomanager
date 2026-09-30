@@ -820,7 +820,7 @@ function showConfirm(title, msg, cb) {
 }
 function closeConfirm() { document.getElementById('confirm-dialog').classList.remove('open'); confirmCallback=null; }
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('confirm-ok').onclick = () => { closeConfirm(); if (confirmCallback) confirmCallback(); };
+  document.getElementById('confirm-ok').onclick = () => { const cb = confirmCallback; closeConfirm(); if (cb) cb(); };
 });
 
 // ============================================================
@@ -1519,6 +1519,11 @@ const SEASON_MONTHS = [
   {n:7,  l:'Juillet',   s:'Jul'},
   {n:8,  l:'Août',      s:'Aoû'},
 ];
+
+function capitalizeName(s) {
+  if (!s) return '';
+  return s.trim().toLowerCase().replace(/(?:^|\s|-|')(\S)/g, function(m,c){return m.replace(c,c.toUpperCase());});
+}
 
 function getMonthKey(season, monthNum) {
   const sy = parseInt(season.split('-')[0]);
@@ -4589,11 +4594,11 @@ function renderUnlinkedPortal(roleData) {
           <div class="mob-grid-2">
             <div class="form-group">
               <label class="form-label">Prénom *</label>
-              <input class="form-input" id="ul-firstname" placeholder="Jean">
+              <input class="form-input" id="ul-firstname" placeholder="Jean" onblur="this.value=capitalizeName(this.value)">
             </div>
             <div class="form-group">
               <label class="form-label">Nom *</label>
-              <input class="form-input" id="ul-lastname" placeholder="Dupont">
+              <input class="form-input" id="ul-lastname" placeholder="Dupont" onblur="this.value=capitalizeName(this.value)">
             </div>
           </div>
           <div class="form-group">
@@ -4678,8 +4683,8 @@ function renderUnlinkedPortal(roleData) {
 
 async function submitUnlinkedProfile() {
   const uid = APP.uid;
-  const firstname = document.getElementById('ul-firstname').value.trim();
-  const lastname  = document.getElementById('ul-lastname').value.trim();
+  const firstname = capitalizeName(document.getElementById('ul-firstname').value);
+  const lastname  = capitalizeName(document.getElementById('ul-lastname').value);
   if (!firstname || !lastname) { showToast('Prénom et nom requis', 'error'); return; }
 
   const day   = document.getElementById('ul-dob-day').value;
@@ -4864,11 +4869,11 @@ function renderPortalTab(tab) {
           <div class="mob-grid-2">
             <div class="form-group" style="margin:0">
               <label class="form-label">Prénom</label>
-              <input class="form-input" id="p-firstname" value="${esc(m.firstName||'')}">
+              <input class="form-input" id="p-firstname" value="${esc(m.firstName||'')}" onblur="this.value=capitalizeName(this.value)">
             </div>
             <div class="form-group" style="margin:0">
               <label class="form-label">Nom</label>
-              <input class="form-input" id="p-lastname" value="${esc(m.lastName||'')}">
+              <input class="form-input" id="p-lastname" value="${esc(m.lastName||'')}" onblur="this.value=capitalizeName(this.value)">
             </div>
           </div>
           <div class="form-group" style="margin:0">
@@ -5036,8 +5041,8 @@ async function submitPendingProfile() {
   const m = APP.portalMember;
   if (!m) return;
 
-  const firstname = document.getElementById('p-firstname').value.trim();
-  const lastname  = document.getElementById('p-lastname').value.trim();
+  const firstname = capitalizeName(document.getElementById('p-firstname').value);
+  const lastname  = capitalizeName(document.getElementById('p-lastname').value);
   const email     = document.getElementById('p-email').value.trim();
   const phone     = document.getElementById('p-phone').value.trim();
   const day       = document.getElementById('p-dob-day').value;
