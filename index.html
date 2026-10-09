@@ -809,7 +809,7 @@ function showToast(msg, type='ok') {
   t.className = `toast ${type}`;
   t.textContent = msg;
   c.appendChild(t);
-  setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(100%)'; t.style.transition='all .3s'; setTimeout(()=>t.remove(),300); }, 3500);
+  setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(100%)'; t.style.transition='all .3s'; setTimeout(()=>t.remove(),300); }, 10000);
 }
 let confirmCallback = null;
 function showConfirm(title, msg, cb) {
@@ -1453,11 +1453,15 @@ async function removeMemberFromSeason(memberId, seasonStr) {
   if (!m || !m.seasons) return;
   if (!confirm('Retirer '+m.firstname+' '+m.lastname+' de la saison '+seasonStr.replace('-','–')+' ?\n\nSes données personnelles sont conservées.')) return;
   try {
+    console.log('[REMOVE] start', memberId, seasonStr);
     showToast('Suppression en cours…', 'info');
     delete m.seasons[seasonStr];
     const seasonKeys = Object.keys(m.seasons||{}).join(', ')||'aucune';
+    console.log('[REMOVE] seasons after delete:', seasonKeys);
+    console.log('[REMOVE] APP.key exists:', !!APP.key);
     showToast('Saisons restantes : '+seasonKeys, 'info');
     await saveMembers();
+    console.log('[REMOVE] saveMembers done');
     showToast('Sauvegarde Firebase OK', 'ok');
     try { await dbRef('dojo/enrollments/'+seasonStr+'/'+memberId).remove(); } catch(_) {}
     await logAudit('Retrait saison', m.firstname+' '+m.lastname+' : saison '+seasonStr+' supprimée');
@@ -1468,6 +1472,7 @@ async function removeMemberFromSeason(memberId, seasonStr) {
     else if (cp==='vue-annuelle') renderVueAnnuelle();
     else renderMembers();
   } catch(e) {
+    console.log('[REMOVE] ERROR:', e.message);
     showToast('ERREUR : '+e.message, 'error');
   }
 }
