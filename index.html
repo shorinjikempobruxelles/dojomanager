@@ -1455,6 +1455,8 @@ async function removeMemberFromSeason(memberId, seasonStr) {
   try {
     delete m.seasons[seasonStr];
     await saveMembers();
+    // Also remove from unencrypted enrollments path so it doesn't get re-added on next load
+    try { await dbRef('dojo/enrollments/'+seasonStr+'/'+memberId).remove(); } catch(_) {}
     await logAudit('Retrait saison', m.firstname+' '+m.lastname+' : saison '+seasonStr+' supprimée');
     showToast(m.firstname+' '+m.lastname+' retiré(e) de la saison '+seasonStr.replace('-','–')+'.', 'ok');
     closeModal();
