@@ -1451,13 +1451,20 @@ async function moveMemberToSeason(memberId, fromSeason, toSeason) {
 async function removeMemberFromSeason(memberId, seasonStr) {
   const m = APP.members.find(x=>x.id===memberId);
   if (!m || !m.seasons) return;
-  if (!confirm(`Retirer ${m.firstname} ${m.lastname} de la saison ${seasonStr.replace('-','–')} ?\n\nSes données personnelles sont conservées.`)) return;
-  delete m.seasons[seasonStr];
-  await saveMembers();
-  await logAudit('Retrait saison', `${m.firstname} ${m.lastname} : saison ${seasonStr} supprimée`);
-  showToast(m.firstname+' '+m.lastname+' retiré(e) de la saison '+seasonStr.replace('-','–')+'.', 'ok');
-  closeModal();
-  renderMembers();
+  if (!confirm('Retirer '+m.firstname+' '+m.lastname+' de la saison '+seasonStr.replace('-','–')+' ?\n\nSes données personnelles sont conservées.')) return;
+  try {
+    delete m.seasons[seasonStr];
+    await saveMembers();
+    await logAudit('Retrait saison', m.firstname+' '+m.lastname+' : saison '+seasonStr+' supprimée');
+    showToast(m.firstname+' '+m.lastname+' retiré(e) de la saison '+seasonStr.replace('-','–')+'.', 'ok');
+    closeModal();
+    const cp = APP.currentPage;
+    if (cp==='inscriptions') renderInscriptions();
+    else if (cp==='vue-annuelle') renderVueAnnuelle();
+    else renderMembers();
+  } catch(e) {
+    showToast('Erreur : '+e.message, 'error');
+  }
 }
 
 function renderMemberSeasonsList(member) {
