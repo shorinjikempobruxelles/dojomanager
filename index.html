@@ -1453,9 +1453,12 @@ async function removeMemberFromSeason(memberId, seasonStr) {
   if (!m || !m.seasons) return;
   if (!confirm('Retirer '+m.firstname+' '+m.lastname+' de la saison '+seasonStr.replace('-','–')+' ?\n\nSes données personnelles sont conservées.')) return;
   try {
+    showToast('Suppression en cours…', 'info');
     delete m.seasons[seasonStr];
+    const seasonKeys = Object.keys(m.seasons||{}).join(', ')||'aucune';
+    showToast('Saisons restantes : '+seasonKeys, 'info');
     await saveMembers();
-    // Also remove from unencrypted enrollments path so it doesn't get re-added on next load
+    showToast('Sauvegarde Firebase OK', 'ok');
     try { await dbRef('dojo/enrollments/'+seasonStr+'/'+memberId).remove(); } catch(_) {}
     await logAudit('Retrait saison', m.firstname+' '+m.lastname+' : saison '+seasonStr+' supprimée');
     showToast(m.firstname+' '+m.lastname+' retiré(e) de la saison '+seasonStr.replace('-','–')+'.', 'ok');
@@ -1465,7 +1468,7 @@ async function removeMemberFromSeason(memberId, seasonStr) {
     else if (cp==='vue-annuelle') renderVueAnnuelle();
     else renderMembers();
   } catch(e) {
-    showToast('Erreur : '+e.message, 'error');
+    showToast('ERREUR : '+e.message, 'error');
   }
 }
 
