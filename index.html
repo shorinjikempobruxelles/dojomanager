@@ -2446,7 +2446,13 @@ async function toggleEnrolCheck(memberId, field, checked, seasonStr) {
 // PRÉSENCES (ATTENDANCE)
 // ============================================================
 function renderPresences() {
-  const activeMembers = APP.members.filter(m=>m.status==='active').sort((a,b)=>a.lastname.localeCompare(b.lastname));
+  // Only show members enrolled in the season matching the selected attendance date
+  const attDateStr = APP.attendanceDate || new Date().toISOString().slice(0,10);
+  const attSeasonY = getSeason(attDateStr);
+  const attSeason = attSeasonY ? `${attSeasonY}-${attSeasonY+1}` : currentSeasonStr();
+  const activeMembers = APP.members
+    .filter(m => m.status==='active' && m.seasons && m.seasons[attSeason] && m.seasons[attSeason] !== false)
+    .sort((a,b)=>a.lastname.localeCompare(b.lastname));
 
   // Period filter options
   const curY = new Date().getFullYear();
@@ -2658,6 +2664,21 @@ function renderRegistre() {
 function renderAttendancePreview() {
   const p = document.getElementById('att-date-preview');
   if (p) p.textContent = '📅 '+fmtDate(APP.attendanceDate);
+  // Rebuild the member checklist in case the date crossed a season boundary
+  const cl = document.getElementById('att-checklist');
+  if (cl) {
+    const attSeasonY = getSeason(APP.attendanceDate);
+    const attSeason = attSeasonY ? `${attSeasonY}-${attSeasonY+1}` : currentSeasonStr();
+    const members = APP.members
+      .filter(m => m.status==='active' && m.seasons && m.seasons[attSeason] && m.seasons[attSeason] !== false)
+      .sort((a,b)=>a.lastname.localeCompare(b.lastname));
+    cl.innerHTML = members.map(m=>`
+      <div class="checklist-item" onclick="toggleAttChecklist(${m.id})">
+        <input type="checkbox" id="att-cb-${m.id}" ${APP.attendanceChecked.has(m.id)?'checked':''} onchange="toggleAttChecklist(${m.id})">
+        <div><div class="name">${esc(m.lastname)} ${esc(m.firstname)}</div><div class="grade">${esc(m.belt||'')}</div></div>
+      </div>`).join('');
+    updateAttCount();
+  }
 }
 
 function toggleAttChecklist(memberId) {
