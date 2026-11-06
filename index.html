@@ -958,9 +958,17 @@ async function loadAllData() {
         const m = APP.members.find(x=>x.id===mid);
         if (m) {
           if (!m.seasons) m.seasons = {};
+          const existing = m.seasons[season];
           // Only add if the key is missing entirely (undefined).
           // If it's false, the admin explicitly removed this member from the season — don't re-add.
-          if (m.seasons[season] === undefined) { m.seasons[season] = {...blank}; enrollChanged = true; }
+          if (existing === undefined) {
+            console.log('[LOAD enrollments] adding season '+season+' to member '+mid+' (was undefined)');
+            m.seasons[season] = {...blank}; enrollChanged = true;
+          } else if (existing === false) {
+            console.log('[LOAD enrollments] SKIPPING season '+season+' for member '+mid+' (explicitly removed)');
+          } else {
+            console.log('[LOAD enrollments] season '+season+' already exists for member '+mid);
+          }
         }
       });
     });
@@ -1457,15 +1465,30 @@ async function moveMemberToSeason(memberId, fromSeason, toSeason) {
 
 async function removeMemberFromSeason(memberId, seasonStr) {
   const m = APP.members.find(x=>x.id===memberId);
-  if (!m || !m.seasons) return;
+  console.log('[REMOVE v61] memberId='+memberId+' season='+seasonStr+' found='+!!m+' seasons='+JSON.stringify(m&&m.seasons));
+  if (!m) { console.warn('[REMOVE v61] member not found'); return; }
+  if (!m.seasons) {
+    // seasons is null/undefined — initialize it so we can mark the removal
+    m.seasons = {};
+    console.log('[REMOVE v61] seasons was null, initialized to {}');
+  }
   if (!confirm('Retirer '+m.firstname+' '+m.lastname+' de la saison '+seasonStr.replace('-','–')+' ?\n\nSes données personnelles sont conservées.')) return;
   try {
-    // Set to false (not delete) so the enrollment merge in loadAllData
-    // knows this was explicitly removed and won't re-add it
     m.seasons[seasonStr] = false;
+    console.log('[REMOVE v61] seasons after mark:', JSON.stringify(m.seasons));
     await saveMembers();
-    // Best-effort cleanup of member-portal enrollment entry (may fail due to Firebase rules — that's OK)
-    try { await dbRef('dojo/enrollments/'+seasonStr+'/'+memberId).set(false); } catch(_) {}
+    console.log('[REMOVE v61] saveMembers done');
+    // Verify: re-read from Firebase immediately to confirm save
+    const snap = await dbRef('dojo/dojo_members').get();
+    const raw = snap.val();
+    console.log('[REMOVE v61] Firebase raw after save (first 200 chars):', JSON.stringify(raw).substring(0,200));
+    // Best-effort cleanup of member-portal enrollment entry
+    try {
+      await dbRef('dojo/enrollments/'+seasonStr+'/'+memberId).set(false);
+      console.log('[REMOVE v61] enrollment set(false) OK');
+    } catch(e2) {
+      console.warn('[REMOVE v61] enrollment set(false) FAILED:', e2.message);
+    }
     await logAudit('Retrait saison', m.firstname+' '+m.lastname+' : saison '+seasonStr+' supprimée');
     showToast(m.firstname+' '+m.lastname+' retiré(e) de la saison '+seasonStr.replace('-','–')+'.', 'ok');
     closeModal();
@@ -1474,6 +1497,7 @@ async function removeMemberFromSeason(memberId, seasonStr) {
     else if (cp==='vue-annuelle') renderVueAnnuelle();
     else renderMembers();
   } catch(e) {
+    console.error('[REMOVE v61] ERROR:', e);
     showToast('Erreur : '+e.message, 'error');
   }
 }
