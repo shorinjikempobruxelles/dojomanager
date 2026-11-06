@@ -1465,31 +1465,33 @@ async function moveMemberToSeason(memberId, fromSeason, toSeason) {
 
 async function removeMemberFromSeason(memberId, seasonStr) {
   const m = APP.members.find(x=>x.id===memberId);
-  console.log('[REMOVE v61] memberId='+memberId+' season='+seasonStr+' found='+!!m+' seasons='+JSON.stringify(m&&m.seasons));
-  if (!m) { console.warn('[REMOVE v61] member not found'); return; }
-  if (!m.seasons) {
-    // seasons is null/undefined — initialize it so we can mark the removal
-    m.seasons = {};
-    console.log('[REMOVE v61] seasons was null, initialized to {}');
-  }
+  const idxBefore = APP.members.indexOf(m);
+  console.log('[REMOVE v65] memberId='+memberId+' idxInArray='+idxBefore+' season='+seasonStr);
+  console.log('[REMOVE v65] seasonStr charCodes:', [...seasonStr].map(c=>c.charCodeAt(0)));
+  console.log('[REMOVE v65] seasons keys:', Object.keys((m&&m.seasons)||{}).map(k=>k+' ['+ [...k].map(c=>c.charCodeAt(0)).join(',') +']'));
+  if (!m) { console.warn('[REMOVE v65] member not found'); return; }
+  if (!m.seasons) { m.seasons = {}; }
   if (!confirm('Retirer '+m.firstname+' '+m.lastname+' de la saison '+seasonStr.replace('-','–')+' ?\n\nSes données personnelles sont conservées.')) return;
   try {
     m.seasons[seasonStr] = false;
-    console.log('[REMOVE v61] seasons after mark:', JSON.stringify(m.seasons));
+    console.log('[REMOVE v65] seasons after mark:', JSON.stringify(m.seasons));
     await saveMembers();
-    console.log('[REMOVE v61] saveMembers done');
-    // Verify: re-read from Firebase immediately to confirm save
-    const snap = await dbRef('dojo/dojo_members').get();
-    const raw = snap.val();
-    console.log('[REMOVE v61] Firebase raw after save (first 200 chars):', JSON.stringify(raw).substring(0,200));
+    // Check: is m still the same object in APP.members?
+    const mAfter = APP.members.find(x=>x.id===memberId);
+    const idxAfter = APP.members.indexOf(mAfter);
+    console.log('[REMOVE v65] after save — m===mAfter:', m===mAfter, ' idxAfter='+idxAfter);
+    console.log('[REMOVE v65] mAfter seasons[seasonStr]:', JSON.stringify(mAfter&&mAfter.seasons&&mAfter.seasons[seasonStr]));
     // Best-effort cleanup of member-portal enrollment entry
     try {
       await dbRef('dojo/enrollments/'+seasonStr+'/'+memberId).set(false);
-      console.log('[REMOVE v61] enrollment set(false) OK');
+      console.log('[REMOVE v65] enrollment set(false) OK');
     } catch(e2) {
-      console.warn('[REMOVE v61] enrollment set(false) FAILED:', e2.message);
+      console.warn('[REMOVE v65] enrollment set(false) FAILED:', e2.message);
     }
     await logAudit('Retrait saison', m.firstname+' '+m.lastname+' : saison '+seasonStr+' supprimée');
+    // Final check before render
+    const mFinal = APP.members.find(x=>x.id===memberId);
+    console.log('[REMOVE v65] FINAL seasons[seasonStr]:', JSON.stringify(mFinal&&mFinal.seasons&&mFinal.seasons[seasonStr]));
     showToast(m.firstname+' '+m.lastname+' retiré(e) de la saison '+seasonStr.replace('-','–')+'.', 'ok');
     closeModal();
     const cp = APP.currentPage;
@@ -1497,7 +1499,7 @@ async function removeMemberFromSeason(memberId, seasonStr) {
     else if (cp==='vue-annuelle') renderVueAnnuelle();
     else renderMembers();
   } catch(e) {
-    console.error('[REMOVE v61] ERROR:', e);
+    console.error('[REMOVE v65] ERROR:', e);
     showToast('Erreur : '+e.message, 'error');
   }
 }
@@ -2100,11 +2102,17 @@ function renderMembers() {
   if (APP.memberFilterSeason !== '') {
     const sy = parseInt(APP.memberFilterSeason);
     const seasonStr = `${sy}-${sy+1}`;
-    console.log('[FILTER] season='+seasonStr+' members before filter:',
-      members.map(m=>({id:m.id,name:m.firstname+' '+m.lastname,val:JSON.stringify(m.seasons&&m.seasons[seasonStr])}))
-    );
+    console.log('[FILTER v65] seasonStr='+seasonStr+' charCodes:', [...seasonStr].map(c=>c.charCodeAt(0)));
+    // Log each member's value individually — not as array (Chrome collapses arrays)
+    members.forEach(m => {
+      const val = m.seasons ? m.seasons[seasonStr] : undefined;
+      const valStr = JSON.stringify(val);
+      if (!val || val === false) {
+        console.log('[FILTER v65] EXCLUDED id='+m.id+' '+m.firstname+' '+m.lastname+' val='+valStr);
+      }
+    });
     members = members.filter(m => m.seasons && m.seasons[seasonStr] && m.seasons[seasonStr] !== false);
-    console.log('[FILTER] members after filter:', members.map(m=>m.firstname+' '+m.lastname));
+    console.log('[FILTER v65] after filter: '+members.length+' members');
   }
   members = [...members].sort((a,b)=>(a.lastname||'').localeCompare(b.lastname||''));
 
