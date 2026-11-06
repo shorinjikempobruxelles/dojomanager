@@ -667,7 +667,7 @@ const APP = {
   pendingProfiles:{}, pendingPayments:{}, pendingCount:0,
   currentPage:'dashboard', sessionExpiry:null,
   currentSeason: null,
-  memberSearch:'', memberFilterBelt:'', memberFilterStatus:'', memberFilterSeason:'',
+  memberSearch:'', memberFilterBelt:'', memberFilterStatus:'', memberFilterSeason: (function(){ const n=new Date(),y=n.getFullYear(),m=n.getMonth(); return String(m>=8?y:y-1); })(),
   attendanceDate:todayISO(), attendanceType:'Cours régulier',
   attendanceChecked:new Set(),
   presenceSubTab:'par-membre', presencePeriod:'90',
@@ -2100,13 +2100,17 @@ function renderMembers() {
   if (APP.memberFilterSeason !== '') {
     const sy = parseInt(APP.memberFilterSeason);
     const seasonStr = `${sy}-${sy+1}`;
+    console.log('[FILTER] season='+seasonStr+' members before filter:',
+      members.map(m=>({id:m.id,name:m.firstname+' '+m.lastname,val:JSON.stringify(m.seasons&&m.seasons[seasonStr])}))
+    );
     members = members.filter(m => m.seasons && m.seasons[seasonStr] && m.seasons[seasonStr] !== false);
+    console.log('[FILTER] members after filter:', members.map(m=>m.firstname+' '+m.lastname));
   }
   members = [...members].sort((a,b)=>(a.lastname||'').localeCompare(b.lastname||''));
 
   // Build season options from allSeasons (includes seasons with enrolment data)
   const availSeasons = allSeasons();
-  const seasonOpts = `<option value="">Toutes les saisons</option>`
+  const seasonOpts = `<option value=""${APP.memberFilterSeason===''?' selected':''}>Toutes les saisons</option>`
     + availSeasons.map(s=>{
         const y = parseInt(s.split('-')[0]);
         return `<option value="${y}"${APP.memberFilterSeason==y?' selected':''}>${s.replace('-','–')}</option>`;
